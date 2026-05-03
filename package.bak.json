@@ -1,0 +1,104 @@
+{
+  "name": "fancloisterzone",
+  "version": "7.0.0-alpha.0",
+  "description": "FanCloisterZone Edition",
+  "repository": "github:fancarpedia/FanCloisterZone",
+  "packageManager": "yarn@4.14.1",
+  "license": "AGPL-3.0-or-later",
+  "author": "Roman Krejcik and fans",
+  "main": "./dist/main/index.js",
+  "scripts": {
+    "download-game-engine": "node build-scripts/download-game-engine.js",
+    "dev": "node scripts/dev.js",
+    "build": "node scripts/build.js",
+    "rebuild": "node scripts/build.js --skip-engine",
+    "test": "",
+    "lint": "eslint --ext .js,.vue ./src",
+    "lint:fix": "yarn run lint -- --fix",
+    "postinstall": "electron-builder install-app-deps && yarn run download-game-engine",
+    "package": "yarn run build && electron-builder -c builder.config.js",
+    "extract": "vue-i18n-extract report --vueFiles './src/{main/modules,renderer}/**/*.?(js|vue)' --languageFiles './src/renderer/locales/*.json'",
+    "update-locales": "node ./dev-utils/update-locales.js",
+    "git-release": "node ./dev-utils/git-release.js"
+  },
+  "build": {
+    "provider": "github"
+  },
+  "keywords": [
+    "fancloisterzone",
+    "fancloister",
+    "fancloisterzone-edition",
+    "fcz",
+    "fcz-edition",
+    "fancloisterzone-edition-fancloister",
+    "fancloisterzone-edition-fcz",
+    "Carcassonne",
+    "Board Game",
+    "Fan Game"
+  ],
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "^24.0.0"
+    },
+    "packageManager": {
+      "name": "yarn",
+      "version": "^4.0.0"
+    }
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "devDependencies": {
+    "@fortawesome/fontawesome-free": "6.3.0",
+    "@nuxtjs/i18n": "^8.3.0",
+    "@vue/compiler-sfc": "^3.5.33",
+    "@vue/devtools": "^8.1.1",
+    "@vue/devtools-core": "^8.1.1",
+    "@vue/devtools-electron": "^8.1.1",
+    "@vue/server-renderer": "^3.5.33",
+    "cross-env": "7.0.3",
+    "deepmerge": "4.3.0",
+    "dotenv": "^17.2.3",
+    "electron": "^36.0.0",
+    "electron-builder": "^25.1.0",
+    "electron-debug": "3.2.0",
+    "electron-devtools-installer": "^3.2.0",
+    "electron-vite": "^5.0.0",
+    "eslint": "^9.0.0",
+    "eslint-friendly-formatter": "4.0.1",
+    "node-gyp": "^9.3.1",
+    "nuxt": "^3.21.4",
+    "ohm-js": "^17.0.4",
+    "roboto-fontface": "0.10.0",
+    "rollup": "^4.60.2",
+    "sass": "^1.75.0",
+    "vite": "^7.3.2",
+    "vite-plugin-vuetify": "^2.1.3",
+    "vue": "^3.5.33",
+    "vue-i18n-extract": "^2.0.7",
+    "vuetify": "^3.12.5",
+    "vuex": "^4.1.0"
+  },
+  "dependencies": {
+    "@openfonts/roboto_latin-ext": "^1.44.1",
+    "axios": "^1.7.0",
+    "compare-versions": "^5.0.3",
+    "discord-rpc": "^4.0.1",
+    "electron-log": "^5.0.0",
+    "electron-updater": "^6.3.0",
+    "lodash": "^4.17.21",
+    "marked": "^9.0.0",
+    "megajs": "1.1.2",
+    "moment": "^2.29.4",
+    "paper": "^0.12.17",
+    "random-bigint": "^0.0.1",
+    "semver": "^7.6.0",
+    "sha256-file": "^1.0.0",
+    "sort-json-keys": "^1.0.3",
+    "tiny-emitter": "^2.1.0",
+    "unzipper": "^0.10.11",
+    "uuid": "^9.0.0",
+    "ws": "^8.13.0"
+  }
+}
