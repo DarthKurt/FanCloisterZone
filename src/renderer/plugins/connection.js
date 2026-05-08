@@ -1,4 +1,3 @@
-import Vue from 'vue'
 import { randomId, randomInt } from '@/utils/random'
 
 import { getAppVersion } from '@/utils/version'
@@ -11,9 +10,10 @@ const HEARTBEAT_INTERVAL = 9 * 1000
 const HEARTBEAT_TIMEOUT = 9 * 1000
 
 class ConnectionPlugin extends EventsBase {
-  constructor (app) {
+  constructor (nuxtApp) {
     super()
-    this.app = app
+    this.app = nuxtApp
+    this.nuxtApp = nuxtApp
     this.ws = null
     this.recentlyUsedSourceHash = null
     this.pingTimeout = null
@@ -50,10 +50,10 @@ class ConnectionPlugin extends EventsBase {
   onOpen () {
     console.log('%c client %c connected to ' + this.ws.url, CONSOLE_CLIENT_COLOR, '')
     const appVersion = getAppVersion()
-    const engineVersion = this.app.store.state.engine.version
-    const appSessionId = this.app.store.state.appSessionId
-    const gameId = this.app.store.state.game ? this.app.store.state.game.id : null
-    const { settings } = this.app.store.state
+    const engineVersion = this.app.$store.state.engine.version
+    const appSessionId = this.app.$store.state.appSessionId
+    const gameId = this.app.$store.state.game ? this.app.$store.state.game.id : null
+    const { settings } = this.app.$store.state
     this.ws.send(JSON.stringify({
       id: randomId(),
       type: 'HELLO',
@@ -230,6 +230,6 @@ class ConnectionPlugin extends EventsBase {
   }
 }
 
-export default ({ app }, inject) => {
-  Vue.prototype.$connection = new ConnectionPlugin(app)
-}
+export default defineNuxtPlugin((nuxtApp) => {
+  return { provide: { connection: new ConnectionPlugin(nuxtApp) } }
+})

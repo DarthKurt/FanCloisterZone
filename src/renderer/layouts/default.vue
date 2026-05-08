@@ -1,540 +1,375 @@
 <template>
   <v-app>
     <div v-if="notifyConnectionReconnecting" class="top-bar">
-      <v-alert type="error">
-        Connection interrupted. Reconnecting&hellip;
-        <v-progress-linear
-          indeterminate
-          color="white"
-        />
+      <v-alert type="warning" variant="tonal" border="start">
+        <div class="reconnect-copy">Connection interrupted. Reconnecting...</div>
+        <v-progress-linear indeterminate />
       </v-alert>
     </div>
 
-    <nuxt />
-    <v-dialog
-      v-model="showAbout"
-      max-width="600"
-    >
-      <AboutDialog
-        @close="showAbout = false"
-      />
+    <slot />
+
+    <v-dialog v-model="showAbout" max-width="680">
+      <AboutDialog @close="showAbout = false" />
     </v-dialog>
-    <v-dialog
-      v-model="showJoinDialog"
-      max-width="600"
-    >
-      <!-- use if to always create fresh dialog instance -->
-      <JoinGameDialog
-        v-if="showJoinDialog"
-        @close="showJoinDialog = false"
-      />
+
+    <v-dialog v-model="showJoinDialog" max-width="560">
+      <JoinGameDialog v-if="showJoinDialog" @close="showJoinDialog = false" />
     </v-dialog>
-    <v-dialog
-      v-model="showSettings"
-      content-class="settings-dialog"
-      max-width="800"
-    >
-      <SettingsDialog
-        ref="settings"
-        @close="showSettings = false"
-      />
+
+    <v-dialog v-model="showSettings" max-width="720">
+      <SettingsDialog @close="showSettings = false" />
     </v-dialog>
-    <v-dialog
-      v-model="showErrorDialog"
-      content-class="error-dialog"
-      max-width="800"
-    >
-      <ErrorDialog
-        v-if="errorMessage"
-        :msg="errorMessage"
-        @close="showErrorDialog = false"
-      />
+
+    <v-dialog v-model="showErrorDialog" max-width="680">
+      <ErrorDialog v-if="errorMessage" :msg="errorMessage" @close="showErrorDialog = false" />
     </v-dialog>
   </v-app>
 </template>
 
-<script>
-import os from 'os'
-import fs from 'fs'
-import { extname } from 'path'
-import { webFrame, shell, ipcRenderer, ipcMain, dialog } from 'electron'
-import { mapState, mapGetters } from 'vuex'
+<script setup>
+import fs from '@/utils/fs-shim'
+import os from '@/utils/os-shim'
+import path from '@/utils/path-shim'
+const extname = path.extname
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useTheme } from 'vuetify'
 
-import AboutDialog from '@/components/AboutDialog'
-import ErrorDialog from '@/components/ErrorDialog'
-import JoinGameDialog from '@/components/JoinGameDialog'
-import SettingsDialog from '@/components/SettingsDialog'
+import AboutDialog from '~/components/AboutDialog.vue'
+import ErrorDialog from '~/components/ErrorDialog.vue'
+import JoinGameDialog from '~/components/JoinGameDialog.vue'
+import SettingsDialog from '~/components/SettingsDialog.vue'
 import { getAppVersion } from '@/utils/version'
-
-import { STATUS_CONNECTED } from '@/store/networking'
+import { STATUS_CONNECTED, STATUS_RECONNECTING } from '@/store/networking'
 
 const ZOOM_SENSITIVITY = 1.4
 
-export default {
-  components: {
-    AboutDialog,
-    ErrorDialog,
-    JoinGameDialog,
-    SettingsDialog
-  },
+const { $addons, $connection, $server, $store, $theme, $tiles } = useNuxtApp()
+const route = useRoute()
+const router = useRouter()
+const { locale } = useI18n()
+const vuetifyTheme = useTheme()
 
-  data () {
-    return {
-      showAbout: false,
-      addonsUpdated: false
-    }
-  },
+const showAbout = ref(false)
+const addonsUpdated = ref(false)
+const listenerDisposers = []
 
-  computed: {
-    ...mapState({
-      java: state => state.java,
-      engine: state => state.engine,
-      connectionState: state => state.networking.connectionStatus,
-      onlineConnected: state => state.networking.connectionType === 'online',
-      errorMessage: state => state.errorMessage
-    }),
+const errorMessage = computed(() => $store.state.errorMessage)
+const onlineConnected = computed(() => $store.state.networking.connectionType === 'online')
+const notifyConnectionReconnecting = computed(() => $store.state.networking.connectionStatus === STATUS_RECONNECTING)
+const undoAllowed = computed(() => $store.getters['game/isUndoAllowed'])
 
-    ...mapGetters({
-      undoAllowed: 'game/isUndoAllowed'
-    }),
+const showJoinDialog = computed({
+  get: () => $store.state.showJoinDialog,
+  set: (value) => $store.commit('showJoinDialog', value)
+})
 
-    showJoinDialog: {
-      get () {
-        return this.$store.state.showJoinDialog
-      },
+const showSettings = computed({
+  get: () => $store.state.showSettings,
+  set: (value) => $store.commit('showSettings', value)
+})
 
-      set (value) {
-        this.$store.commit('showJoinDialog', value)
-      }
-    },
+const showErrorDialog = computed({
+  get: () => !!$store.state.errorMessage,
+  set: () => $store.commit('errorMessage', null)
+})
 
-    showSettings: {
-      get () {
-        return this.$store.state.showSettings
-      },
+function registerListener (channel, handler) {
+  if (typeof window === 'undefined' || !window.electronAPI?.on) {
+    return
+  }
 
-      set (value) {
-        this.$store.commit('showSettings', value)
-      }
-    },
+  const disposer = window.electronAPI.on(channel, handler)
+  listenerDisposers.push(typeof disposer === 'function' ? disposer : () => window.electronAPI.off?.(channel, handler))
+}
 
-    showErrorDialog: {
-      get () {
-        return !!this.errorMessage
-      },
-
-      set (value) {
-        this.$store.commit('errorMessage', null)
-      }
-    },
-
-    notifyConnectionReconnecting () {
-      return this.connectionState === 'reconnecting'
-    }
-  },
-
-  watch: {
-    $route (to) {
-      this.updateMenu()
-    },
-
-    undoAllowed () {
-      this.updateMenu()
-    },
-
-    onlineConnected () {
-      this.updateMenu()
-      this.updateTitle()
-    },
-
-    showSettings (val) {
-      if (val) {
-        this.$refs.settings?.clean()
-      }
-    },
-
-    engine () {
-      this.updateMenu()
-    }
-  },
-
-  created () {
-    ipcRenderer.on('win-close-request', async (hasLocalGame) => {
-      console.log(hasLocalGame)
-      if (!hasLocalGame) {
-        ipcRenderer.send('win-close-allowed')
-        return
-      }
- 
-      const confirmed = await ipcRenderer.invoke('dialog.showConfirmDialog', {
-        title: $t('dialog.close-local-game.unfinished-local-game'),
-        ok: $t('dialog.close-local-game.resign-and-close'),
-        cancel: $t('dialog.close-local-game.continue-playing')
-      })
-
-      if (confirmed) {
-        ipcRenderer.send('win-close-allowed')
-      }
-    })
-
-    ipcRenderer.on('app-update', (event, updateInfo) => {
-      this.$store.commit('updateInfo', updateInfo)
-    })
-    ipcRenderer.on('update-progress', (event, progress) => {
-      this.$store.commit('updateProgress', progress.percent)
-    })
-
-    ipcRenderer.on('menu.playonline-connect', () => {
-      this.$store.dispatch('networking/connectPlayOnlineFan')
-    })
-    ipcRenderer.on('menu.playonline-disconnect', () => {
-      this.$store.dispatch('networking/close')
-      this.$router.push('/')
-    })
-    ipcRenderer.on('menu.new-game', () => {
-      this.$store.dispatch('gameSetup/newGame')
-      this.$router.push('/game-setup')
-    })
-    ipcRenderer.on('menu.join-game', () => {
-      this.showJoinDialog = true
-    })
-    ipcRenderer.on('menu.leave-game', () => {
-      this.leaveGame()
-    })
-    ipcRenderer.on('menu.save-game', () => {
-      this.$store.dispatch('game/save')
-    })
-    ipcRenderer.on('menu.load-game', () => {
-      this.$store.dispatch('game/load')
-    })
-    ipcRenderer.on('menu.show-settings', () => {
-      this.showSettings = true
-    })
-    ipcRenderer.on('menu.undo', () => {
-      this.$store.dispatch('game/undo')
-    })
-    ipcRenderer.on('menu.zoom-in', () => {
-      this.$root.$emit('request-zoom', ZOOM_SENSITIVITY)
-    })
-    ipcRenderer.on('menu.zoom-out', () => {
-      this.$root.$emit('request-zoom', -ZOOM_SENSITIVITY)
-    })
-    ipcRenderer.on('menu.rotate', () => {
-      this.$root.$emit('request-rotate', 90)
-    })
-    ipcRenderer.on('menu.game-tiles', () => {
-      this.$store.commit('showGameTiles', !this.$store.state.showGameTiles)
-    })
-    ipcRenderer.on('menu.game-farm-hints', () => {
-      if (this.$store.state.board.layers.FarmHintsLayer) {
-        this.$store.dispatch('board/hideLayer', { layer: 'FarmHintsLayer' })
-      } else {
-        this.$store.dispatch('board/showLayer', {
-          layer: 'FarmHintsLayer',
-          props: {}
-        })
-      }
-    })
-    ipcRenderer.on('menu.game-history', () => {
-      this.$store.commit('toggleGameHistory')
-    })
-    ipcRenderer.on('menu.game-setup', () => {
-      this.$store.commit('showGameSetup', true)
-    })
-    ipcRenderer.on('menu.rules', () => {
-      shell.openExternal('https://wikicarpedia.com/car/Special:MyLanguage/Main_Page')
-    })
-    ipcRenderer.on('menu.report-bug', () => {
-      shell.openExternal('https://discord.gg/CswNeVg3eS') /* Fan Edition */
-    })
-    ipcRenderer.on('menu.about', () => {
-      this.showAbout = true
-    })
-
-    ipcRenderer.on('menu.dump-server', () => {
-      this.dumpServer()
-    })
-    ipcRenderer.on('menu.save-for-test-runner', () => {
-      this.$store.dispatch('game/savescenario')
-    })
-    ipcRenderer.on('menu.test-runner', () => {
-      this.$router.push('/test-runner')
-    })
-    ipcRenderer.on('menu.reload-addons', () => {
-      this.loadAddons()
-    })
-    ipcRenderer.on('menu.theme-inspector', () => {
-      this.$router.push('/theme-inspector')
-    })
-  },
-
-  async mounted () {
-    webFrame.setZoomLevel(0)
-    webFrame.setVisualZoomLevelLimits(1, 1)
-
-    const onThemeChange = val => {
-      if (val === 'dark') {
-        this.$vuetify.theme.dark = true
-        ipcRenderer.invoke('theme.change', 'dark')
-      } else {
-        this.$vuetify.theme.dark = false
-        ipcRenderer.invoke('theme.change', 'light')
-      }
-    }
-
-    await this.$store.dispatch('settings/loaded', await ipcRenderer.invoke('settings.get'))
-    onThemeChange(this.$store.state.settings.theme)
-    this.$i18n.setLocale(this.$store.state.settings.locale)
-    this.updateMenu()
-
-    ipcRenderer.on('error', (ev, value) => {
-      this.$store.commit('errorMessage', value)
-    })
-
-    ipcRenderer.on('settings.changed', (ev, value) => {
-      this.$store.dispatch('settings/loaded', value)
-    })
-
-    ipcRenderer.on('settings.update', (ev, update) => {
-      this.$store.dispatch('settings/update', update)
-      this.$store.dispatch('checkEngineVersion')
-    })
-    
-    try {
-      await this.$store.dispatch('checkJavaVersion')
-      if (this.java?.ok) {
-        this.$store.dispatch('checkEngineVersion')
-      }
-    } catch {
-      // do nothing, state flags asre set
-    }
-
-    await this.loadAddons()
-
-    window.addEventListener('keydown', this.onKeyDown)
-
-    await this.$store.dispatch('settings/registerChangeCallback', ['theme', onThemeChange])
-    await this.$store.dispatch('settings/registerChangeCallback', ['userAddons', () => { this.loadAddons() }])
-    await this.$store.dispatch('settings/registerChangeCallback', ['addonsManifestUrl', async () => {
-      this.addonsUpdated = false
-      await this.loadAddons()
-      this.$addons.emit('change')
-    }])
-    await this.$store.dispatch('settings/registerChangeCallback', ['enabledArtworks', (_, source) => {
-      if (source === 'load') {
-        // load only when triggered by manual user change, otherwise it's cause by addon install/uninstall and reloaed from her
-        this.$theme.loadArtworks()
-      }
-    }])
-    await this.$store.dispatch('settings/registerChangeCallback', ['dev', () => { this.updateMenu() }])
-
-    this.$addons.on('change', async () => {
-      await this.loadAddons()
-    })
-  },
-  
-  beforeDestroy () {
-    window.removeEventListener('keydown', this.onKeyDown)
-  },
-
-  methods: {
-    async loadAddons () {
-      await this.$addons.loadAddons()
-      await this.$tiles.loadExpansions()
-      if (!this.addonsUpdated) {
-        await this.$addons.updateOutdatedAddons()
-        this.addonsUpdated=true
-      }
-      
-      // during start up, don't wait for artworks, theme can be loaded in background
-      this.$theme.loadArtworks()
-    },
-
-    updateMenu () {
-      const routeName = this.$route.name
-      const gameOpen = routeName === 'game-setup' || routeName === 'open-game' || routeName === 'game'
-      const gameRunning = routeName === 'game'
-
-      ipcRenderer.invoke('update-menu', {
-        'playonline-connect': !this.onlineConnected && !gameOpen && this.engine?.ok,
-        'playonline-disconnect': this.onlineConnected,
-        'new-game': !this.onlineConnected && !gameOpen,
-        'join-game': !this.onlineConnected && !gameOpen && this.engine?.ok,
-        'leave-game': gameOpen,
-        'save-game': gameRunning,
-        'load-game': !gameOpen && this.engine?.ok,
-        'undo': gameRunning && this.undoAllowed,
-        'zoom-in': gameRunning,
-        'zoom-out': gameRunning,
-        'rotate': gameRunning,
-        'toggle-history': gameRunning,
-        'game-tiles': gameRunning,
-        'game-farm-hints': gameRunning,
-        'game-setup': gameRunning,
-        'dump-server': this.$server.isRunning(),
-        'theme-inspector': !gameOpen,
-        'save-for-test-runner': gameRunning
-      })
-    },
-    
-    updateTitle() {
-      document.title = this.onlineConnected ? 'FanCloisterZone Edition @ fanserver' /* + this.$store.state.onlineHostName */ : 'FanCloisterZone Edition' /* Fan Edition */
-    },
-
-    async leaveGame () {
-      if (this.onlineConnected) {
-        const { $connection } = this
-        const gameId = this.$store.state.game.id
-        if (gameId) {
-          if (this.$store.state.networking.connectionStatus === STATUS_CONNECTED) {
-            $connection.send({ type: 'LEAVE_GAME', payload: { gameId } })
-          }
-        }
-        this.$router.push('/online')
-      } else {
-        const confirmed = await ipcRenderer.invoke('confirm-leave-game')
-        if (!confirmed) return
- 
-        this.$store.dispatch('game/close')
-        this.$router.push('/')
-      }
-    },	
-
-    onKeyDown (ev) {
-      if (ev.key === '+') { // bind both + and numpad +
-        this.$root.$emit('request-zoom', ZOOM_SENSITIVITY)
-        return
-      }
-      if (ev.key === '-') {
-        this.$root.$emit('request-zoom', -ZOOM_SENSITIVITY)
-        return
-      }
-      if (ev.key === 'Escape') {
-        this.$store.commit('board/pointsExpression', null)
-        if (this.showAbout) {
-          this.showAbout = false
-          ev.preventDefault()
-          ev.stopPropagation()
-        }
-      }
-    },
-
-    async dumpServer () {
-      const data = {
-        appVersion: getAppVersion(),
-        engineVersion: this.$store.state.engine?.version,
-        date: (new Date()).toISOString(),
-        os: `${os.platform()} ${os.release()}`,
-        java: this.java ? `${this.java.vendor} ${this.java.version}` : '',
-        ...(await this.$server.dump())
-      }
-
-      let { filePath } = await ipcRenderer.invoke('dialog.showSaveDialog', {
-        title: 'Save Server Dump',
-        filters: [{ name: 'JSON files', extensions: ['json'] }],
-        properties: ['createDirectory', 'showOverwriteConfirmation']
-      })
-      if (filePath) {
-        if (extname(filePath) === '') {
-          filePath += '.json'
-        }
-        fs.writeFile(filePath, JSON.stringify(data, null, 2), err => {
-          if (err) {
-            console.error(err)
-          } else {
-            console.log(`Dump save to ${filePath}`)
-          }
-        })
-      }
-    }
+function applyTheme (value) {
+  const themeName = value === 'dark' ? 'dark' : 'light'
+  vuetifyTheme.global.name.value = themeName
+  if (typeof window !== 'undefined' && window.electronAPI?.invoke) {
+    window.electronAPI.invoke('theme.change', themeName)
   }
 }
+
+async function loadAddons () {
+  await $addons.loadAddons()
+  await $tiles.loadExpansions()
+
+  if (!addonsUpdated.value) {
+    await $addons.updateOutdatedAddons()
+    addonsUpdated.value = true
+  }
+
+  $theme.loadArtworks()
+}
+
+async function updateMenu () {
+  if (typeof window === 'undefined' || !window.electronAPI?.invoke) {
+    return
+  }
+
+  const routeName = String(route.name || '')
+  const gameOpen = routeName === 'game-setup' || routeName === 'open-game' || routeName === 'game'
+  const gameRunning = routeName === 'game'
+
+  await window.electronAPI.invoke('update-menu', {
+    'playonline-connect': !onlineConnected.value && !gameOpen && !!$store.state.engine?.ok,
+    'playonline-disconnect': onlineConnected.value,
+    'new-game': !onlineConnected.value && !gameOpen,
+    'join-game': !onlineConnected.value && !gameOpen && !!$store.state.engine?.ok,
+    'leave-game': gameOpen,
+    'save-game': gameRunning,
+    'load-game': !gameOpen && !!$store.state.engine?.ok,
+    'undo': gameRunning && undoAllowed.value,
+    'zoom-in': gameRunning,
+    'zoom-out': gameRunning,
+    'rotate': gameRunning,
+    'game-tiles': gameRunning,
+    'game-farm-hints': gameRunning,
+    'toggle-history': gameRunning,
+    'game-setup': gameRunning,
+    'dump-server': $server.isRunning(),
+    'theme-inspector': !gameOpen,
+    'save-for-test-runner': gameRunning
+  })
+}
+
+function updateTitle () {
+  document.title = onlineConnected.value
+    ? 'FanCloisterZone Edition @ fanserver'
+    : 'FanCloisterZone Edition'
+}
+
+async function leaveGame () {
+  if (onlineConnected.value) {
+    const gameId = $store.state.game.id
+    if (gameId && $store.state.networking.connectionStatus === STATUS_CONNECTED) {
+      $connection.send({ type: 'LEAVE_GAME', payload: { gameId } })
+    }
+    await $store.dispatch('networking/close')
+    return
+  }
+
+  await $store.dispatch('game/close')
+  router.push('/')
+}
+
+function onKeyDown (event) {
+  if (event.key === '+') {
+    window.dispatchEvent(new CustomEvent('fcz:request-zoom', { detail: ZOOM_SENSITIVITY }))
+    return
+  }
+
+  if (event.key === '-') {
+    window.dispatchEvent(new CustomEvent('fcz:request-zoom', { detail: -ZOOM_SENSITIVITY }))
+    return
+  }
+
+  if (event.key === 'Escape' && showAbout.value) {
+    showAbout.value = false
+    event.preventDefault()
+    event.stopPropagation()
+  }
+}
+
+async function dumpServer () {
+  const data = {
+    appVersion: getAppVersion(),
+    engineVersion: $store.state.engine?.version,
+    date: (new Date()).toISOString(),
+    os: `${os.platform()} ${os.release()}`,
+    java: $store.state.java ? `${$store.state.java.vendor} ${$store.state.java.version}` : '',
+    ...(await $server.dump())
+  }
+
+  let { filePath } = await window.electronAPI.invoke('dialog.showSaveDialog', {
+    title: 'Save Server Dump',
+    filters: [{ name: 'JSON files', extensions: ['json'] }],
+    properties: ['createDirectory', 'showOverwriteConfirmation']
+  })
+
+  if (!filePath) {
+    return
+  }
+
+  if (extname(filePath) === '') {
+    filePath += '.json'
+  }
+
+  await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2))
+}
+
+onMounted(async () => {
+  if (window.electronAPI?.webFrame) {
+    window.electronAPI.webFrame.setZoomLevel(0)
+    window.electronAPI.webFrame.setVisualZoomLevelLimits(1, 1)
+  }
+
+  const settingsPayload = await window.electronAPI.invoke('settings.get')
+  await $store.dispatch('settings/loaded', settingsPayload)
+
+  if ($store.state.settings.locale) {
+    locale.value = $store.state.settings.locale
+  }
+
+  applyTheme($store.state.settings.theme)
+
+  registerListener('app-update', (event, updateInfo) => {
+    $store.commit('updateInfo', updateInfo)
+  })
+  registerListener('update-progress', (event, progress) => {
+    $store.commit('updateProgress', progress.percent)
+  })
+  registerListener('error', (event, value) => {
+    $store.commit('errorMessage', value)
+  })
+  registerListener('settings.changed', async (event, value) => {
+    await $store.dispatch('settings/loaded', value)
+  })
+  registerListener('settings.update', async (event, update) => {
+    await $store.dispatch('settings/update', update)
+    try {
+      await $store.dispatch('checkEngineVersion')
+    } catch {
+      // state is updated by the action
+    }
+  })
+  registerListener('menu.playonline-connect', () => {
+    $store.dispatch('networking/connectPlayOnlineFan')
+  })
+  registerListener('menu.playonline-disconnect', () => {
+    $store.dispatch('networking/close')
+  })
+  registerListener('menu.new-game', () => {
+    $store.dispatch('gameSetup/newGame')
+    router.push('/game-setup')
+  })
+  registerListener('menu.join-game', () => {
+    showJoinDialog.value = true
+  })
+  registerListener('menu.leave-game', () => {
+    leaveGame()
+  })
+  registerListener('menu.save-game', () => {
+    $store.dispatch('game/save')
+  })
+  registerListener('menu.load-game', () => {
+    $store.dispatch('game/load')
+  })
+  registerListener('menu.show-settings', () => {
+    showSettings.value = true
+  })
+  registerListener('menu.undo', () => {
+    $store.dispatch('game/undo')
+  })
+  registerListener('menu.zoom-in', () => {
+    window.dispatchEvent(new CustomEvent('fcz:request-zoom', { detail: ZOOM_SENSITIVITY }))
+  })
+  registerListener('menu.zoom-out', () => {
+    window.dispatchEvent(new CustomEvent('fcz:request-zoom', { detail: -ZOOM_SENSITIVITY }))
+  })
+  registerListener('menu.rotate', () => {
+    window.dispatchEvent(new CustomEvent('fcz:request-rotate', { detail: 90 }))
+  })
+  registerListener('menu.game-tiles', () => {
+    $store.commit('showGameTiles', !$store.state.showGameTiles)
+  })
+  registerListener('menu.game-farm-hints', () => {
+    if ($store.state.board.layers.FarmHintsLayer) {
+      $store.dispatch('board/hideLayer', { layer: 'FarmHintsLayer' })
+    } else {
+      $store.dispatch('board/showLayer', { layer: 'FarmHintsLayer', props: {} })
+    }
+  })
+  registerListener('menu.game-history', () => {
+    $store.commit('toggleGameHistory')
+  })
+  registerListener('menu.game-setup', () => {
+    $store.commit('showGameSetup', true)
+  })
+  registerListener('menu.rules', () => {
+    window.electronAPI.shell.openExternal('https://wikicarpedia.com/car/Special:MyLanguage/Main_Page')
+  })
+  registerListener('menu.report-bug', () => {
+    window.electronAPI.shell.openExternal('https://discord.gg/CswNeVg3eS')
+  })
+  registerListener('menu.about', () => {
+    showAbout.value = true
+  })
+  registerListener('menu.dump-server', () => {
+    dumpServer()
+  })
+  registerListener('menu.save-for-test-runner', () => {
+    $store.dispatch('game/savescenario')
+  })
+  registerListener('menu.test-runner', () => {
+    router.push('/test-runner')
+  })
+  registerListener('menu.reload-addons', () => {
+    loadAddons()
+  })
+  registerListener('menu.theme-inspector', () => {
+    router.push('/theme-inspector')
+  })
+
+  try {
+    await $store.dispatch('checkJavaVersion')
+    if ($store.state.java?.ok) {
+      await $store.dispatch('checkEngineVersion')
+    }
+  } catch {
+    // state flags are updated by the actions
+  }
+
+  try {
+    await loadAddons()
+  } catch (error) {
+    console.error(error)
+  }
+
+  window.addEventListener('keydown', onKeyDown)
+  updateMenu()
+  updateTitle()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeyDown)
+  while (listenerDisposers.length) {
+    const dispose = listenerDisposers.pop()
+    dispose?.()
+  }
+})
+
+watch(() => $store.state.settings.theme, (value) => {
+  if (value) {
+    applyTheme(value)
+  }
+})
+
+watch(() => $store.state.settings.locale, (value) => {
+  if (value) {
+    locale.value = value
+  }
+})
+
+watch(
+  [() => route.fullPath, () => onlineConnected.value, () => undoAllowed.value, () => $store.state.engine?.ok],
+  () => {
+    updateMenu()
+    updateTitle()
+  }
+)
 </script>
 
-<style lang="sass">
-@import '@openfonts/roboto_latin-ext/index.css'
-@import '~vuetify/src/styles/styles.sass'
+<style scoped>
+.top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 0.75rem 0.75rem 0;
+}
 
-@import '~/assets/styles/player-colors.scss'
-@import '~/assets/styles/rotation.sass'
-
-:root
-  --aside-width: 290px
-  --aside-width-plus-gap: #{290px + $panel-gap}
-  --action-bar-height: 84px
-  --game-setup-header-height: 72px
-
-  @media #{map-get($display-breakpoints, 'lg-and-down')}
-    --aside-width: 250px
-    --aside-width-plus-gap: #{250px + $panel-gap}
-
-  @media #{map-get($display-breakpoints, 'md-and-down')}
-    --aside-width: 210px
-    --aside-width-plus-gap: #{210px + $panel-gap}
-
-  @media (max-height: 768px)
-    --action-bar-height: 60px
-    --game-setup-header-height: 50px
-
-html
-  overflow-y: auto
-
-body
-  margin: 0 !important
-
-.view
-  width: 100%
-  min-height: 100vh
-
-svg, g, use
-  &.dragon, &.bigtop
-    fill: $dragon-color
-
-svg, g, use
-  &.fairy
-    fill: $fairy-color
-
-svg, g, use
-  &.count
-    fill: $count-color
-
-svg, g, use
-  &.mage
-    fill: $mage-color
-
-svg, g, use
-  &.witch
-    fill: $witch-color
-
-svg, g, use
-  &.donkey
-    fill: $donkey-color
-
-.settings-dialog
-  height: 80vh
-  display: grid
-
-#theme-resources, #symbols
-  display: none
-
-.top-bar
-  position: absolute
-  top: 0
-  left: 0
-  width: 100%
-  z-index: 999
-
-::-webkit-scrollbar
-  width: 8px
-  height: 8px
-
-::-webkit-scrollbar-track
-  background: #f0f0f0
-
-::-webkit-scrollbar-thumb
-  background: #555
-  border-radius: 10px
-
-::-webkit-scrollbar-thumb:hover
-  background: #777
+.reconnect-copy {
+  margin-bottom: 0.5rem;
+}
 </style>

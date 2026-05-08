@@ -1,98 +1,102 @@
 <template>
-  <v-card class="about">
-    <v-card-text>
-      <section class="d-flex justify-center py-10 splash">
-        <img :src="splashImage()" :title="$t('about.fantitle')" />
+  <v-card class="about-dialog">
+    <v-card-text class="content">
+      <section class="splash">
+        <img :src="splashImage" :alt="t('about.fantitle')" />
       </section>
-      <section class="d-flex justify-space-between">
-        <div><span class="label">{{ $t('about.author') }}</span>: Roman Krejčík &amp; fans</div>
+
+      <section class="meta-grid">
         <div>
-          <span class="label"><template v-if="$i18n.locale == 'en'">{{ $t('about.corrections') }}</template><template v-else>
-              {{ $t('about.translation') }} ({{ $i18n.locale }})</template></span>:
-          {{ $t('@author') }}
+          <div class="label">{{ t('about.author') }}</div>
+          <div>Roman Krejcik and fans</div>
+        </div>
+        <div>
+          <div class="label">{{ t('about.version') }}</div>
+          <div>{{ version }}</div>
+        </div>
+        <div>
+          <div class="label">{{ t('about.configuration-file') }}</div>
+          <div class="linkish" @click="openConfig">{{ settingsFile }}</div>
+        </div>
+        <div>
+          <div class="label">{{ t('about.system-java-version') }}</div>
+          <div>{{ javaLabel }}</div>
+        </div>
+        <div>
+          <div class="label">{{ t('about.jcloisterzone-game-engine') }}</div>
+          <div>{{ enginePath }}</div>
+          <div>{{ engineVersion }}</div>
         </div>
       </section>
-      <hr class="my-3">
-      <section class="my-3">
-        <div class="label">{{ $t('about.configuration-file') }}</div>
-        <div class="value config-file" @click="openConfig">{{ $store.state.settings.file }}</div>
-        <div class="label">{{ $t('about.system-java-version') }}</div>
-        <div class="value">{{ java ? (java.version || '') : '' }}</div>
-        <div class="label">{{ $t('about.jcloisterzone-game-engine') }}</div>
-        <div class="value">{{ engine ? engine.path : '' }}</div>
-        <div class="value">{{ engine ? engine.version : '' }}</div>
-      </section>
-      <hr class="my-3">
-      <section class="d-flex justify-space-between align-center">
-        <div><span class="label">{{ $t('about.version') }}:</span> {{ version }}</div>
-        <div class="report-bug" @click="openReportBug"><span class="label">{{ $t('menu.report-bug')}}</span>: <v-icon class="color-overlay">fab fa-discord</v-icon></div>
-        <v-btn text @click="$emit('close')">{{ $t('button.close') }}</v-btn>
-      </section>
     </v-card-text>
+
+    <v-card-actions class="justify-space-between">
+      <v-btn variant="text" @click="openReportBug">{{ t('menu.report-bug') }}</v-btn>
+      <v-btn variant="text" @click="$emit('close')">{{ t('button.close') }}</v-btn>
+    </v-card-actions>
   </v-card>
 </template>
 
-<script>
-import { shell } from 'electron'
-import { mapState } from 'vuex'
+<script setup>
+import { computed } from 'vue'
 
+import splashDark from '~/assets/splash_dark.png'
+import splashLight from '~/assets/splash_light.png'
 import { getAppVersion } from '@/utils/version'
 
-const MEEPLES_SVG = require('~/assets/meeples.svg')
+defineEmits(['close'])
 
-export default {
-  data () {
-    return {
-      MEEPLES_SVG,
-      version: getAppVersion()
-    }
-  },
+const { $store } = useNuxtApp()
+const { t } = useI18n()
 
-  computed: mapState({
-    java: state => state.java,
-    engine: state => state.engine
-  }),
+const version = getAppVersion()
+const splashImage = computed(() => ($store.state.settings.theme === 'dark' ? splashDark : splashLight))
+const settingsFile = computed(() => $store.state.settings.file || '')
+const javaLabel = computed(() => {
+  if (!$store.state.java) return ''
+  return [$store.state.java.vendor, $store.state.java.version].filter(Boolean).join(' ')
+})
+const enginePath = computed(() => $store.state.engine?.path || '')
+const engineVersion = computed(() => $store.state.engine?.version || '')
 
-  methods: {
-    openConfig () {
-      shell.openPath(this.$store.state.settings.file)
-    },
-    openReportBug () {
-      shell.openPath('https://discord.gg/CswNeVg3eS') /* Fan Edition */
-    },
-    splashImage () {
-      const theme = this.$vuetify.theme.dark ? 'dark' : 'light'
-      return require(`@/assets/splash_${theme}.png`)
-    }
+function openConfig () {
+  if (settingsFile.value) {
+    window.electronAPI.shell.openPath(settingsFile.value)
   }
 }
 
+function openReportBug () {
+  window.electronAPI.shell.openExternal('https://discord.gg/CswNeVg3eS')
+}
 </script>
 
-<style lang="sass" scoped>
-.about
-  .splash
-    img
-      max-width: 75%
-    
-  section
-    font-size: 16px
+<style scoped>
+.content {
+  display: grid;
+  gap: 1.25rem;
+}
 
-  .version
-    font-weight: 500
-    font-size: 20px
-    margin-bottom: 10px
+.splash {
+  display: flex;
+  justify-content: center;
+}
 
-  .label
-    margin-top: 5px
-    font-weight: bolder
+.splash img {
+  max-width: min(100%, 420px);
+}
 
-  .value
-    margin-left: 20px
+.meta-grid {
+  display: grid;
+  gap: 1rem;
+}
 
-  .config-file, .report-bug
-    cursor: pointer
+.label {
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
 
-    &:hover
-      text-decoration: underline
+.linkish {
+  cursor: pointer;
+  text-decoration: underline;
+}
 </style>

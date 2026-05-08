@@ -1,395 +1,93 @@
 <template>
-  <GameSetupGrid v-if="loaded && gameId" :sets="sets" :rules="rules">
-    <template #header>
-      <div
-        v-if="gameKey"
-        class="game-name"
-        :class="{ editable: isOwner && !readOnly }"
-        @click.stop="showRenameDialog"
-      >
-        <v-icon v-if="isOwner && !readOnly">fas fa-pencil-alt</v-icon>
-        {{ name }}
-        <span v-if="!name" class="unnamed">{{ $t('game-setup.open-game.untitled-game') }}</span>
+  <section class="placeholder-page view">
+    <div class="panel">
+      <div class="eyebrow">Phase 5</div>
+      <h1>{{ gameName }}</h1>
+      <p>The open-game lobby route is back in place. The detailed slot management UI will be restored in the next component pass.</p>
+      <dl class="summary-grid">
+        <div>
+          <dt>Game Key</dt>
+          <dd>{{ gameKey || 'Unavailable' }}</dd>
+        </div>
+        <div>
+          <dt>Slots</dt>
+          <dd>{{ slotCount }}</dd>
+        </div>
+        <div>
+          <dt>Owner</dt>
+          <dd>{{ isOwner ? 'Local player' : 'Remote host' }}</dd>
+        </div>
+      </dl>
+      <div class="actions">
+        <v-btn color="primary" :disabled="!canStart" @click="startGame">{{ t('button.start') }}</v-btn>
+        <v-btn variant="text" @click="leave">{{ t('menu.leave-game') }}</v-btn>
       </div>
-
-      <HeaderMessage
-        :sets="sets"
-        :info="slotsReserved ? (!ai || slotsReservedByAI ? null : $t('game-setup.open-game.no-ai-in-game') ): (readOnly ? $t('game-setup.open-game.assign-all-players-to-start') : $t('game-setup.open-game.no-player-in-game') )"
-      />
-
-      <div v-if="gameKey" class="game-key">
-        <v-checkbox
-          class="public-game"
-          v-if="!readOnly"
-          v-model="publicGame"
-          dense hide-details
-          :label="$t('game-setup.open-game.public-game')"
-          :disabled="!isOwner"
-        />
-        
-        <v-tooltip bottom :open-delay="200">
-          <template #activator="{ on, attrs }">
-            <span
-              class="key-title"
-              v-bind="attrs"
-              v-on="on"
-            >
-              <v-icon>far fa-question-circle</v-icon>
-            </span>
-          </template>
-          <span>{{ $t('game-setup.open-game.share-the-key') }}</span>
-        </v-tooltip>
-        <strong class="game-key" @click="selectOnClick">{{ gameKey }}</strong>
-      </div>
-
-      <HeaderGameButton
-        v-if="isOwner"
-        :title="$t('button.start')"
-        :sets="sets"
-        :disabled="(!ai && !slotsAssigned) || (ai && (!slotsReservedByAI || !slotsReserved))"
-        @click="startGame"
-      />
-
-      <template v-else>
-        <span class="text">{{ $t('game-setup.open-game.waiting-for-host-to-start-the-game') }}</span>
-      </template>
-
-      <HeaderLeaveGameButton :title="$t('menu.leave-game')" @click="leaveGame" />
-
-    </template>
-
-    <template #main>
-
-      <div class="slots">
-        <PlayerSlot
-          v-for="slot in slots"
-          :key="slot.number"
-          :number="slot.number"
-          :owner="slot.sessionId"
-          :client="slot.clientId"
-          :name="slot.name"
-          :order="slot.order"
-          :read-only="readOnly"
-          :ai="slot.ai || false"
-        />
-      </div>
-
-      <v-dialog v-model="isRenameDialogOpen" max-width="600px">
-        <v-card>
-          <v-card-title>
-            <span class="headline">{{ $t('game-setup.open-game.set-game-title') }}</span>
-          </v-card-title>
-          <v-card-text>
-            <v-container>
-              <v-text-field ref="gameTitleInput" v-model="editName" :label="$t('game-setup.open-game.name')" @keydown.enter="renameGame" />
-            </v-container>
-          </v-card-text>
-          <v-card-actions>
-            <v-spacer />
-            <v-btn text @click="isRenameDialogOpen = false">{{ $t('button.cancel') }}</v-btn>
-            <v-btn text @click="renameGame">{{ $t('button.confirm') }}</v-btn>
-          </v-card-actions>
-        </v-card>
-      </v-dialog>
-    </template>
-
-    <template #detail>
-      <div class="options">
-        <h2>{{ $t('game-setup.open-game.options') }}</h2>
-        <v-checkbox
-          v-if="!readOnly"
-          v-model="randomizeSeating"
-          dense hide-details
-          :label="$t('game-setup.open-game.randomize-seating-order')"
-          :disabled="!isOwner"
-        />
-        <v-checkbox
-          v-model="puristTiles"
-          dense hide-details
-          :label="$t('game-setup.open-game.hide-remaining-tiles-cheat-sheet')"
-          :disabled="readOnly || !isOwner"
-        />
-      </div>
-
-      <GameSetupOverview :setup="setup" />
-    </template>
-  </GameSetupGrid>
+    </div>
+  </section>
 </template>
 
-<script>
-import { ipcRenderer } from 'electron'
-import { mapGetters, mapState } from 'vuex'
+<script setup>
+import { computed } from 'vue'
 
-import GameSetupOverview from '@/components/game-setup/overview/GameSetupOverview'
-import GameSetupGrid from '@/components/game-setup/GameSetupGrid'
-import HeaderGameButton from '@/components/game-setup/HeaderGameButton'
-import HeaderLeaveGameButton from '@/components/game-setup/HeaderLeaveGameButton'
-import HeaderMessage from '@/components/game-setup/HeaderMessage'
-import PlayerSlot from '@/components/game-setup/PlayerSlot'
+const { $store } = useNuxtApp()
+const router = useRouter()
+const { t } = useI18n()
 
-export default {
-  components: {
-    GameSetupOverview,
-    GameSetupGrid,
-    HeaderGameButton,
-    HeaderLeaveGameButton,
-    HeaderMessage,
-    PlayerSlot
-  },
+const gameName = computed(() => $store.state.game.name || t('game-setup.open-game.untitled-game'))
+const gameKey = computed(() => $store.state.game.key)
+const slotCount = computed(() => ($store.state.game.slots || []).length)
+const isOwner = computed(() => $store.state.game.owner === $store.state.settings.clientId)
+const canStart = computed(() => isOwner.value && !!$store.state.game.id)
 
-  data () {
-    return {
-      isRenameDialogOpen: false,
-      editName: null,
-      // do not update it after start when gameMessages are set to empty array
-      readOnly: this.$store.state.game.gameMessages !== null
-    }
-  },
+async function startGame () {
+  await $store.dispatch('game/start')
+}
 
-  computed: {
-    ...mapState({
-      ai: state => state.game.setup?.ai,
-      gameKey: state => state.game.key,
-      setup: state => state.game.setup,
-      sets: state => state.game.setup?.sets,
-      rules: state => state.game.setup?.rules,
-      gameId: state => state.game.id,
-      name: state => state.game.name,
-      options: state => state.game.setup?.options,
-      slots: state => state.game.slots,
-      isOwner: state => state.game.owner === state.settings.clientId
-    }),
-
-    ...mapGetters({
-      loaded: 'loaded'
-    }),
-
-    slotsAssigned () {
-      if (this.readOnly) {
-        return !this.slots.find(slot => !slot.sessionId)
-      } else {
-        return !!this.slots.find(slot => slot.sessionId)
-      }
-    },
-
-    slotsReserved () {
-      return !!this.slots.find(slot => slot.clientId && !slot.ai)
-    },
-
-    slotsReservedByAI () {
-      return !!this.slots.find(slot => slot.clientId && slot.ai)
-    },
-
-    randomizeSeating: {
-      set (value) {
-        this.$store.commit('game/options', { randomizeSeating: value })
-        this.$connection.send({
-          type: 'GAME_OPTION',
-          payload: {
-            gameId: this.gameId,
-            key: 'randomizeSeating',
-            value
-          }
-        })
-      },
-
-      get () {
-        return this.options.randomizeSeating
-      }
-    },
-
-    publicGame: {
-      set (value) {
-        this.$store.commit('game/options', { publicGame: value })
-        this.$connection.send({
-          type: 'GAME_OPTION',
-          payload: {
-            gameId: this.gameId,
-            key: 'publicGame',
-            value
-          }
-        })
-      },
-
-      get () {
-        return this.options.publicGame
-      }
-    },
-
-    puristTiles: {
-      set (value) {
-        this.$store.commit('game/options', { puristTiles: value })
-        this.$connection.send({
-          type: 'GAME_OPTION',
-          payload: {
-            gameId: this.gameId,
-            key: 'puristTiles',
-            value
-          }
-        })
-      },
-
-      get () {
-        return this.options.puristTiles
-      }
-    }
-  },
-
-  beforeCreate () {
-    // useful for dev mode, reload on this page redirects back to home
-    if (!this.$store.state.networking.connectionType) {
-      this.$store.dispatch('game/close')
-      this.$router.push('/')
-    }
-  },
-
-  beforeDestroy () {
-    this._onClose && this.$connection.off('close', this._onClose)
-  },
-
-  methods: {
-    startGame () {
-      this.$store.dispatch('game/start')
-    },
-
-    async leaveGame () {
-      await ipcRenderer.emit('menu.leave-game')
-    },
-
-    renameGame () {
-      this.$store.dispatch('game/rename', this.editName)
-      this.isRenameDialogOpen = false
-    },
-
-    selectOnClick (ev) {
-      const selection = window.getSelection()
-      const range = document.createRange()
-      range.selectNodeContents(ev.target)
-      selection.removeAllRanges()
-      selection.addRange(range)
-    },
-
-    showRenameDialog () {
-      this.editName = this.name
-      this.isRenameDialogOpen = true
-      setTimeout(() => {
-        this.$refs.gameTitleInput.focus()
-        this.$refs.gameTitleInput.$el.querySelector('input').setAttribute('maxlength', 40)
-      }, 1)
-    }
-  }
+async function leave () {
+  await $store.dispatch('networking/close')
+  router.push('/')
 }
 </script>
 
-<style lang="sass" scoped>
-*
-  user-select: none
+<style scoped>
+.placeholder-page {
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
 
-.game-name
-  flex-grow: 1
-  font-size: 20px
-  white-space: nowrap
-  overflow: hidden
-  text-overflow: ellipsis
+.panel {
+  width: min(100%, 720px);
+  border-radius: 24px;
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.04);
+}
 
-  &.editable
-    cursor: pointer
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
 
-  .v-icon
-    position: relative
-    margin-right: 10px
-    top: -3px
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
 
-  .unnamed
-    font-style: italic
+.summary-grid dt {
+  font-weight: 600;
+}
 
-.game-key
-  margin-right: 20px
-  position: relative
-  display: flex
-  align-items: center
+.summary-grid dd {
+  margin: 0.25rem 0 0;
+}
 
-  .key-title
-    opacity: 0.6
-
-  strong
-    font-size: 26px
-    font-weight: 400
-    letter-spacing: 0.5px
-    margin-left: 10px
-    padding: 4px 10px
-    border-radius: 6px
-    cursor: pointer
-    white-space: nowrap
-
-    +theme using ($theme)
-      color: map-get($theme, 'text-color')
-      background: map-get($theme, 'cards-selected-bg')
-
-.public-game
-  margin-right: 2ex
-    
-header .v-alert
-  position: relative
-  top: 8px
-  width: 300px
-
-main
-  dislay: flex
-  flex-order: start
-  
-.slots
-  order: 1
-  padding: 0 30px
-  display: grid
-  grid-template-columns: 1fr 1fr 1fr
-  gap: 30px
-  justify-content: center
-  margin-top: 40px
-
-.game-setup-overview
-  margin-bottom: 20px
-
-  +theme using ($theme)
-    background: map-get($theme, 'cards-bg')
-
-  ::v-deep .rules
-    padding-right: 20px
-    font-size: 14px
-
-    h2
-      margin-right: -20px
-
-h2
-  font-weight: 300
-  font-size: 16px
-  text-transform: uppercase
-  text-align: center
-
-  +theme using ($theme)
-    color: map-get($theme, 'gray-text-color')
-
-.options
-  padding: 30px 20px 40px
-  order: 2
-
-.game-key
-  user-select: text
-
-@media (max-width: 1079px)
-  .slots
-    grid-template-columns: 1fr 1fr
-
-@media (max-width: 919px)
-  .slots
-    grid-template-columns: 1fr
-
-@media (max-height: 768px)
-  .slots
-    order: 2
-    margin-top: 20px
-
-  .options
-    order: 1
-    padding-top: 15px
+.actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
 </style>

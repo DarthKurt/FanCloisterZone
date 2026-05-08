@@ -1,18 +1,12 @@
-import os from 'os'
-import fs from 'fs'
-import path from 'path'
-import https from 'https'
+import os from '@/utils/os-shim'
+import fs from '@/utils/fs-shim'
+import path from '@/utils/path-shim'
 
 import sortBy from 'lodash/sortBy'
 import uniq from 'lodash/uniq'
 import isNumber from 'lodash/isNumber'
-import unzipper from 'unzipper'
-import sha256File from 'sha256-file'
 import { compare } from 'compare-versions'
-import Vue from 'vue'
 import { File } from 'megajs'
-import { ipcRenderer } from 'electron'
-import fetch from 'node-fetch'
 import semver from 'semver'
 
 import { getAppVersion } from '@/utils/version'
@@ -21,6 +15,14 @@ import { EventsBase } from '@/utils/events'
 const CLASSIC_ADDON_KEY = 'classic'
 const MEGA_PROVIDER = 'mega'
 const HTTPS_PROVIDER = 'https'
+
+function getArgValue(prefix) {
+  const argv = (typeof process !== 'undefined' && Array.isArray(process.argv))
+    ? process.argv
+    : ((typeof window !== 'undefined' && Array.isArray(window.process?.argv)) ? window.process.argv : [])
+  const value = argv.find(arg => arg.startsWith(prefix))
+  return value ? value.replace(prefix, '') : ''
+}
 
 class Addons extends EventsBase {
   constructor(ctx) {
@@ -37,14 +39,14 @@ class Addons extends EventsBase {
 
   async _ensureAutoDownloaded() {
     if (this.AUTO_DOWNLOADED === null) {
-      this.AUTO_DOWNLOADED = await ipcRenderer.invoke('get-addon-defaults')
+      this.AUTO_DOWNLOADED = await window.electronAPI.invoke('get-addon-defaults')
     }
   }
 
   async _getManifestUrl() {
     await this._ensureAutoDownloaded()
 
-    const configuredUrl = this.ctx.store.state.settings.addonsManifestUrl
+    const configuredUrl = this.ctx.$store.state.settings.addonsManifestUrl
     const normalizedUrl = typeof configuredUrl === 'string' ? configuredUrl.trim() : ''
     return normalizedUrl || this.AUTO_DOWNLOADED?.addonsManifestUrl
   }
@@ -65,7 +67,7 @@ class Addons extends EventsBase {
     }
 
     this.downloadableManifestError = message
-    this.ctx.app.store.commit('errorMessage', {
+    this.ctx.$store.commit('errorMessage', {
       title: 'Invalid add-ons manifest',
       content: message
     }, { root: true })
@@ -104,7 +106,7 @@ class Addons extends EventsBase {
       const res = await fetch(manifestUrl)
       if (res.status === 200) {
         const addons = await res.json()
-        const appVersion = await ipcRenderer.invoke('get-app-version')
+        const appVersion = await window.electronAPI.invoke('get-app-version')
         const isDev = /-alpha|-beta|-rc/i.test(appVersion)
         const appVer = semver.coerce(appVersion)
 
@@ -149,8 +151,8 @@ class Addons extends EventsBase {
   }
 
   async loadAddons() {
-    const { settings } = this.ctx.store.state
-    const userDataPath = window.process.argv.find(arg => arg.startsWith('--user-data=')).replace('--user-data=', '')
+    const { settings } = this.ctx.$store.state
+    const userDataPath = getArgValue('--user-data=')
     const installedAddons = []
     const installedAddonsIds = new Set()
 
@@ -190,7 +192,7 @@ class Addons extends EventsBase {
       }
     }
 
-    await readFolder(process.resourcesPath + '/addons/', { removable: false, hidden: true })
+    await readFolder(window.electronAPI.resourcesPath + '/addons/', { removable: false, hidden: true })
     await readFolder(path.join(userDataPath, 'addons'), { removable: true, hidden: false })
 
     await this.updateOutdatedClassic(installedAddons)
@@ -210,14 +212,14 @@ class Addons extends EventsBase {
       }
     }
 
-    this.ctx.app.store.commit('hasClassicAddon', !!installedAddons.find(a => a.id === CLASSIC_ADDON_KEY && !a.error))
+    this.ctx.$store.commit('hasClassicAddon', !!installedAddons.find(a => a.id === CLASSIC_ADDON_KEY && !a.error))
 
     this.addons = sortBy(installedAddons, ['removable', 'id'])
-    this.ctx.app.store.commit('addonsLoaded')
+    this.ctx.$store.commit('addonsLoaded')
   }
 
   async mkAddonsFolder() {
-    const userDataPath = window.process.argv.find(arg => arg.startsWith('--user-data=')).replace('--user-data=', '')
+    const userDataPath = getArgValue('--user-data=')
     const addonsFolder = path.join(userDataPath, 'addons')
     await fs.promises.mkdir(addonsFolder, { recursive: true })
     return addonsFolder
@@ -226,24 +228,24 @@ class Addons extends EventsBase {
   async installDownloadable(addonKey, version) {
     const downloadable = await this.getDownloadable()
     if (!downloadable) {
-      throw new Error($nuxt.$t('settings.add-ons.add-ons-definition-not-available'))
+      throw new Error(this.ctx.$i18n.t('settings.add-ons.add-ons-definition-not-available'))
     }
 
     const addonDefinition = downloadable.find(a => a.key === addonKey)
     if (!addonDefinition) {
-      throw new Error($nuxt.$t('settings.add-ons.download-definition-not-found'))
+      throw new Error(this.ctx.$i18n.t('settings.add-ons.download-definition-not-found'))
     }
 
     const versionDefinition = addonDefinition.versions.find(v => v.version === version)
     if (!versionDefinition) {
-      throw new Error($nuxt.$t('settings.add-ons.missing-available-version'))
+      throw new Error(this.ctx.$i18n.t('settings.add-ons.missing-available-version'))
     }
 
     const downloadedPath = path.join(os.tmpdir(), `${addonKey}-v${versionDefinition.version}.jca`)
 
     const downloadUrl = await this.resolveDownloadUrl(versionDefinition.url)
     if (!downloadUrl) {
-      throw new Error($nuxt.$t('settings.add-ons.download-definition-not-found'))
+      throw new Error(this.ctx.$i18n.t('settings.add-ons.download-definition-not-found'))
     }
 
     const installed = this.addons.find(a => a.id === addonKey)
@@ -264,10 +266,10 @@ class Addons extends EventsBase {
 
     // --- SHA-256 verification ---
     if (versionDefinition.sha256) {
-      const checksum = sha256File(downloadedPath)
+      const checksum = await window.electronAPI.invoke('fs.sha256', downloadedPath)
       if (checksum !== versionDefinition.sha256) {
         await fs.promises.unlink(downloadedPath)
-        throw new Error($nuxt.$t('settings.add-ons.downloaded-file-checksum-mismatch'))
+        throw new Error(this.ctx.$i18n.t('settings.add-ons.downloaded-file-checksum-mismatch'))
       }
     }
     // Install after verification
@@ -298,28 +300,18 @@ class Addons extends EventsBase {
     } catch {
       // file does not exist, no need to delete
     }
-
-    let fileStream
     try {
-      fileStream = fs.createWriteStream(downloadFileName)
-    } catch (err) {
-      console.warn(`Error creating write stream for ${downloadFileName}:`, err)
-      throw new Error($nuxt.$t('settings.add-ons.download-file-write-error'))
-    }
-
-    try {
-      await new Promise((resolve, reject) => {
-        switch (provider) {
-          case MEGA_PROVIDER:
-            this.downloadFromMega(link, fileStream, downloadFileName, resolve, reject)
-            break;
-          case HTTPS_PROVIDER:
-            this.downloadFileFromUrl(link, fileStream, downloadFileName, resolve, reject)
-            break;
-          default:
-            throw new Error(`Unknown provider: ${provider}`)
-        }
-      });
+      if (provider === MEGA_PROVIDER) {
+        await window.electronAPI.invoke('download.mega', link, downloadFileName)
+      } else if (provider === HTTPS_PROVIDER) {
+        const res = await fetch(link)
+        if (!res.ok) throw new Error('Download failed: ' + (res.status || res.statusText))
+        const ab = await res.arrayBuffer()
+        const uint8 = new Uint8Array(ab)
+        await fs.promises.writeFile(downloadFileName, uint8)
+      } else {
+        throw new Error(`Unknown provider: ${provider}`)
+      }
     } catch (e) {
       console.error(`Error downloading add-on file (${downloadFileName}) with provider ${provider}:`, e)
       await fs.promises
@@ -338,14 +330,14 @@ class Addons extends EventsBase {
 
       // Set total size if available
       megaFile.loadAttributes().then(() => {
-        this.ctx.app.store.commit('downloadSize', megaFile.size)
+        this.ctx.$store.commit('downloadSize', megaFile.size)
       }).catch(err => console.warn('Could not load Mega file size:', err))
 
       megaFile
         .download()
         .on('data', chunk => {
           downloadedBytes += chunk.length
-          this.ctx.app.store.commit('downloadProgress', downloadedBytes)
+          this.ctx.$store.commit('downloadProgress', downloadedBytes)
         })
         .pipe(fileStream)
         .on('error', function (err) {
@@ -372,18 +364,16 @@ class Addons extends EventsBase {
 
     const tmpFolder = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'addon-'))
 
-    // TODO UNPACK FIRST TO TEMP DIR AND VALIDATE
-    await fs.createReadStream(filePath)
-      .pipe(unzipper.Extract({ path: tmpFolder }))
-      .promise()
+    // Unpack the downloaded JCA in the main process
+    await window.electronAPI.invoke('unzip.extract', filePath, tmpFolder)
 
     const listing = await fs.promises.readdir(tmpFolder)
     if (listing.length !== 1) {
-      throw new Error($nuxt.$t('settings.add-ons.invalid-add-on-multiple-folders-in-root'))
+      throw new Error(this.ctx.$i18n.t('settings.add-ons.invalid-add-on-multiple-folders-in-root'))
     }
     const id = listing[0]
     if (this.addons.find(addon => addon.id === id)) {
-      throw new Error($nuxt.$t('settings.add-ons.add-on-already-installed', { id: id }))
+      throw new Error(this.ctx.$i18n.t('settings.add-ons.add-on-already-installed', { id: id }))
     }
 
     const tmpAddonPath = path.join(tmpFolder, id)
@@ -396,8 +386,8 @@ class Addons extends EventsBase {
 
     await fs.promises.rmdir(tmpFolder, { recursive: true })
 
-    const enabledArtworks = uniq([...this.ctx.store.state.settings.enabledArtworks, ...addon.json.artworks.map(artwork => `${id}/${artwork}`)])
-    await this.ctx.store.dispatch('settings/update', { enabledArtworks })
+    const enabledArtworks = uniq([...this.ctx.$store.state.settings.enabledArtworks, ...addon.json.artworks.map(artwork => `${id}/${artwork}`)])
+    await this.ctx.$store.dispatch('settings/update', { enabledArtworks })
 
     await new Promise(resolve => {
       this.emitter.emit('change')
@@ -410,8 +400,8 @@ class Addons extends EventsBase {
 
     if (addon.artworks?.length) { // may be undefined for invalid artwork
       const ids = addon.artworks.map(a => a.id)
-      const enabledArtworks = this.ctx.store.state.settings.enabledArtworks.filter(id => !ids.includes(id))
-      await this.ctx.store.dispatch('settings/update', { enabledArtworks })
+      const enabledArtworks = this.ctx.$store.state.settings.enabledArtworks.filter(id => !ids.includes(id))
+      await this.ctx.$store.dispatch('settings/update', { enabledArtworks })
     }
     await new Promise(resolve => {
       this.emitter.emit('change')
@@ -497,7 +487,7 @@ class Addons extends EventsBase {
     const downloadUrl = await this.resolveDownloadUrl(links)
 
     if (!downloadUrl) {
-      this.ctx.app.store.commit('download', null)
+      this.ctx.$store.commit('download', null)
       return
     }
 
@@ -505,7 +495,7 @@ class Addons extends EventsBase {
     console.log('expected sha256: ' + classicVersionDefinition.sha256)
     console.log('Downloading to ' + fullPath)
 
-    this.ctx.app.store.commit('download', {
+    this.ctx.$store.commit('download', {
       name: 'classic.jca',
       description: 'Downloading classic artwork',
       progress: null,
@@ -520,15 +510,15 @@ class Addons extends EventsBase {
     const expectedChecksum = classicVersionDefinition.sha256
     if (!expectedChecksum) {
       this._reportManifestError('Classic add-on entry in manifest must include sha256.')
-      this.ctx.app.store.commit('download', null)
+      this.ctx.$store.commit('download', null)
       await fs.promises.unlink(downloadedPath)
       return
     }
 
-    const checksum = sha256File(downloadedPath)
+    const checksum = await window.electronAPI.invoke('fs.sha256', downloadedPath)
     if (checksum !== expectedChecksum) {
       console.log('classic.jca checksum mismatch ' + checksum)
-      this.ctx.app.store.commit('download', {
+      this.ctx.$store.commit('download', {
         name: 'classic.jca',
         description: 'Error: Downloaded file has invalid checksum',
         progress: 0,
@@ -544,11 +534,9 @@ class Addons extends EventsBase {
       console.log('Removing outdated artwork ' + classicArtwork.folder)
       await fs.promises.rmdir(classicArtwork.folder, { recursive: true })
     }
-    await fs.createReadStream(downloadedPath)
-      .pipe(unzipper.Extract({ path: addonsFolder }))
-      .promise()
+    await window.electronAPI.invoke('unzip.extract', downloadedPath, addonsFolder)
     await fs.promises.unlink(downloadedPath)
-    this.ctx.app.store.commit('download', null)
+    this.ctx.$store.commit('download', null)
 
     const artwork = await this._readAddon(CLASSIC_ADDON_KEY, fullPath)
     installedAddons.unshift(artwork)
@@ -594,7 +582,7 @@ class Addons extends EventsBase {
       const total = totalHeader ? parseInt(totalHeader, 10) : NaN
       const hasKnownSize = Number.isFinite(total) && total > 0
 
-      this.ctx.app.store.commit('downloadSize', hasKnownSize ? total : null)
+      this.ctx.$store.commit('downloadSize', hasKnownSize ? total : null)
       console.log(hasKnownSize ? `Total size: ${total} bytes` : `Total size unavailable for ${link}`)
 
       response.on('data', chunk => {
@@ -602,7 +590,7 @@ class Addons extends EventsBase {
         if (hasKnownSize) {
           console.log(`Downloaded ${downloadedBytes} of ${total} bytes`)
         }
-        this.ctx.app.store.commit('downloadProgress', downloadedBytes)
+        this.ctx.$store.commit('downloadProgress', downloadedBytes)
       })
 
       const responseErrorHandler = err => finishWithError(err)
@@ -760,17 +748,7 @@ class Addons extends EventsBase {
   }
 }
 
-export default (ctx, inject) => {
-  let instance = null
-  const prop = {
-    get() {
-      if (instance === null) {
-        instance = new Addons(ctx)
-      }
-      return instance
-    }
-  }
-
-  Object.defineProperty(Vue.prototype, '$addons', prop)
-  Object.defineProperty(ctx, '$addons', prop)
-}
+export default defineNuxtPlugin((nuxtApp) => {
+  const addons = new Addons(nuxtApp)
+  return { provide: { addons } }
+})

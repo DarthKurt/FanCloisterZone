@@ -1,0 +1,192 @@
+<template>
+  <GameSetupGrid v-if="loaded" :sets="sets" :rules="rules" :show-detail="tab > 0" :show-pack-size="tab > 0">
+    <template #header>
+      <v-tabs v-model="tab" @change="onTabChange">
+        <v-tab><v-icon small>far fa-heart</v-icon></v-tab>
+        <v-tab><v-icon small class="icon">fas fa-square</v-icon>{{ $t('game-setup.header.tiles') }}</v-tab>
+        <v-tab active-class="active">
+          <div class="meeple icon">
+            <Meeple type="SmallFollower" />
+          </div>
+          {{ $t('game-setup.header.components') }}
+        </v-tab>
+        <v-tab><v-icon small class="icon">fas fa-book</v-icon>{{ $t('game-setup.header.rules') }}</v-tab>
+        <v-tab v-if="!ai"><v-icon small class="icon">far fa-clock</v-icon>{{ $t('game-setup.header.timer') }}</v-tab>
+      </v-tabs>
+
+      <HeaderMessage v-if="tab > 0" :sets="sets" />
+      <HeaderGameButton v-if="tab > 0" :title="$t('button.create')" :sets="sets" @click="createGame" />
+      <HeaderLeaveGameButton :title="$t('menu.leave-game')" @click="leaveGame" />
+      
+    </template>
+
+    <template #main>
+      <BookmarksTab v-show="tab === 0" @load="tab = 1" @select="selectedSetupDetail = $event" />
+      <TileSetsTab v-show="tab === 1" />
+      <FiguresTab v-show="tab === 2" />
+      <RulesTab v-show="tab === 3" />
+      <TimerTab v-if="!ai" v-show="tab === 4" />
+    </template>
+
+    <template #detail>
+      <div v-if="tab > 0" class="detail-pack">
+        <h2>{{ $t('game-setup.selected-tiles') }}</h2>
+        <TileDistribution
+          :tile-size="$vuetify.breakpoint.height > 768 ? 100 : 80"
+          :sets="sets"
+          :rules="rules"
+          @tile-click="onTileClick"
+        />
+        <GameAnnotationsPanel v-if="settings.devMode && $store.state.networking.connectionType !== 'online'" ref="annotationsPanel" />
+      </div>
+    </template>
+  </GameSetupGrid>
+</template>
+
+<script>
+import { mapGetters, mapState } from 'vuex'
+
+import BookmarksTab from '@/components/game-setup/tabs/BookmarksTab'
+import FiguresTab from '@/components/game-setup/tabs/FiguresTab'
+import GameAnnotationsPanel from '@/components/dev/GameAnnotationsPanel'
+import GameSetupGrid from '@/components/game-setup/GameSetupGrid'
+import HeaderMessage from '@/components/game-setup/HeaderMessage'
+import HeaderGameButton from '@/components/game-setup/HeaderGameButton'
+import HeaderLeaveGameButton from '@/components/game-setup/HeaderLeaveGameButton'
+import Meeple from '@/components/game/Meeple'
+import TileDistribution from '@/components/TileDistribution'
+import TileSetsTab from '@/components/game-setup/tabs/TileSetsTab'
+import TimerTab from '@/components/game-setup/tabs/TimerTab'
+import RulesTab from '@/components/game-setup/tabs/RulesTab'
+
+export default {
+  components: {
+    BookmarksTab,
+    FiguresTab,
+    GameSetupGrid,
+    GameAnnotationsPanel,
+    HeaderMessage,
+    HeaderGameButton,
+    HeaderLeaveGameButton,
+    Meeple,
+    TileDistribution,
+    TileSetsTab,
+    TimerTab,
+    RulesTab
+  },
+
+  data () {
+    const tabParam = this.$route.query.tab
+    return {
+      tab: tabParam === undefined ? 1 : ~~tabParam,
+      selectedSetupDetail: null
+    }
+  },
+
+  computed: {
+    ...mapState({
+      ai: state => state.gameSetup.ai,
+      sets: state => state.gameSetup.sets,
+      rules: state => state.gameSetup.rules,
+      detail: state => state.gameSetup.detail,
+      settings: state => state.settings
+    }),
+
+    ...mapGetters({
+      loaded: 'loaded'
+    })
+  },
+
+  beforeCreate () {
+    // useful for dev mode, if setup not exist, redirect to home
+    if (this.$store.state.gameSetup.sets == null) {
+      this.$store.dispatch('game/close')
+      this.$router.push('/')
+      // it would be nice to create one, but also wait for artwork load is needed
+      // this.$store.dispatch('gameSetup/newGame')
+    }
+  },
+
+  methods: {
+    async createGame () {
+      await this.$store.dispatch('gameSetup/createGame')
+    },
+
+    async leaveGame () {
+      // 'menu.leave-game' is a push event from main; call leaveGame directly
+      this.$store.dispatch('leaveGame')
+    },
+
+    onTileClick (tileId, maxCount) {
+      if (this.settings.devMode && this.$store.state.networking.connectionType !== 'online') {
+        this.$refs.annotationsPanel.appendTile(tileId, maxCount)
+      }
+    },
+
+    onTabChange () {
+      window.scrollTo(0, 0)
+    }
+  }
+}
+</script>
+
+<style lang="sass" scoped>
+*
+  user-select: none
+
+.detail-pack
+  padding: 20px
+
+  h2
+    text-align: center
+    margin-bottom: $panel-gap
+
+    font-weight: 300
+    font-size: 16px
+    text-transform: uppercase
+
+    +theme using ($theme)
+      color: map-get($theme, 'gray-text-color')
+
+header
+  .warning-text, .info-text
+    font-size: 24px
+    white-space: nowrap
+    background-color: #F44336
+    color: white
+    padding: 0 20px
+    border-radius: 4px
+
+.dev-panel
+  border-top: 1px solid black
+  margin-top: 20px
+  opacity: 0.1
+  min-height: 200px
+
+  &.visible
+    opacity: 1
+
+  h5
+    margin-top: 10px
+    text-align: center
+    
+.meeple
+  svg
+    width: 18px
+    height: 18px
+    +theme using ($theme)
+      fill: map-get($theme, 'cards-text')
+
+.active
+  .meeple
+    svg
+      fill: var(--v-primary-base) !important
+      
+.icon, .meeple
+  margin-right: 1ex
+  
+@media (max-height: 768px)
+  .detail-pack
+    padding: 10px
+
+</style>

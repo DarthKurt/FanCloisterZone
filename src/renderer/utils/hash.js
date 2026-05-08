@@ -1,4 +1,3 @@
-
 export function cyrb53 (str, seed = 0) {
   let h1 = 0xDEADBEEF ^ seed
   let h2 = 0x41C6CE57 ^ seed

@@ -20,3 +20,8 @@ watch('src/main', { recursive: true }, async (event, filename) => {
     console.log(`[electron] ${filename} changed, rebuilding...`)
     await build()
 })
+
+watch('src/renderer', { recursive: true }, async (event, filename) => {
+    console.log(`[electron] ${filename} changed, rebuilding...`)
+    await build()
+})

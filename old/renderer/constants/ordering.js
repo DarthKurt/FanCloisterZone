@@ -1,0 +1,42 @@
+
+export const FOLLOWER_ORDERING = {
+  SmallFollower: 1,
+  Phantom: 10,
+  BigFollower: 20,
+  Abbot: 30,
+  Mayor: 40,
+  Wagon: 50,
+  Shepherd: 60,
+  Builder: 70,
+  Pig: 80,
+  Barn: 90,
+  Obelisk: 100,
+  Windmill: 110,
+  DecinskySneznik: 120
+}
+
+export const TOKEN_ORDERING = {
+  FLOWERS_BLUE: -10,
+  FLOWERS_VIOLET: -9,
+  FLOWERS_WHITE: -8,
+  FLOWERS_YELLOW: -7,
+  ABBEY_TILE: 10,
+  TOWER_PIECE: 20,
+  BLACK_TOWER_PIECE: 21,
+  WHITE_TOWER_PIECE: 22,
+  BRIDGE: 30,
+  CASTLE: 40,
+  FERRY: 50,
+  LB_SHED: 60,
+  LB_HOUSE: 61,
+  LB_TOWER: 62,
+  TUNNEL_A: 70,
+  TUNNEL_B: 71,
+  TUNNEL_C: 72,
+  WINE: 100,
+  GRAIN: 101,
+  CLOTH: 102,
+  GOLD: 110,
+  KING: 120,
+  ROBBER: 121
+}

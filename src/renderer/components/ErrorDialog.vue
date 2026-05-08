@@ -1,31 +1,31 @@
 <template>
-  <v-card class="about">
-    <v-card-title />
+  <v-card>
     <v-card-text>
-      <v-alert type="error">
+      <v-alert type="error" variant="tonal" class="mb-4">
         {{ msg.title }}
       </v-alert>
-      {{ msg.content }}
+      <div class="content">{{ msg.content }}</div>
     </v-card-text>
-    <v-card-actions>
-      <v-spacer />
-      <v-btn
-        text
-        @click="$emit('close')"
-      >
-        {{ $t('button.close') }}
-      </v-btn>
+    <v-card-actions class="justify-end">
+      <v-btn variant="text" @click="$emit('close')">{{ t('button.close') }}</v-btn>
     </v-card-actions>
   </v-card>
 </template>
 
-<script>
-export default {
-  props: {
-    msg: { type: Object, required: true }
+<script setup>
+defineEmits(['close'])
+defineProps({
+  msg: {
+    type: Object,
+    required: true
   }
-}
+})
+
+const { t } = useI18n()
 </script>
 
-<style lang="sass" scoped>
+<style scoped>
+.content {
+  white-space: pre-wrap;
+}
 </style>

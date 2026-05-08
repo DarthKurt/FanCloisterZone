@@ -1,6 +1,5 @@
-import fs from 'fs'
-import { extname, parse } from 'path'
-import { ipcRenderer } from 'electron'
+import fs from '@/utils/fs-shim'
+import path from '@/utils/path-shim'
 import { compare } from 'compare-versions'
 
 import difference from 'lodash/difference'
@@ -9,7 +8,7 @@ import range from 'lodash/range'
 import zip from 'lodash/zip'
 import isNil from 'lodash/isNil'
 import groupBy from 'lodash/groupBy'
-import Vue from 'vue'
+import { nextTick } from 'vue'
 
 import { SAVED_GAME_COMPATIBILITY } from '@/constants/versions'
 import Location from '@/models/Location'
@@ -28,19 +27,16 @@ const deployedOnField = (state, response) => {
     const msg = state.gameMessages[state.gameMessages.length - i - 1]
     if (msg.type === 'DEPLOY_MEEPLE') {
       const loc = Location.parse(msg.payload.pointer.location)
-      if (loc?.isFieldLocation()) {
-        return true
-      }
+      if (loc?.isFieldLocation()) return true
     }
   }
   return false
 }
+
 const deployedOnTower = (state, response) => {
   for (let i = 0; i < response.undo.depth; i++) {
     const msg = state.gameMessages[state.gameMessages.length - i - 1]
-    if (msg.type === 'DEPLOY_MEEPLE' && msg.payload.pointer?.feature === 'Tower') {
-      return true
-    }
+    if (msg.type === 'DEPLOY_MEEPLE' && msg.payload.pointer?.feature === 'Tower') return true
   }
   return false
 }
@@ -57,12 +53,9 @@ const computeClock = (playersCount, messages) => {
   return clocks
 }
 
-// chiild process can't be part of store itself, because it's internals are mutated be own
-// causing Error: [vuex] do not mutate vuex store state outside mutation handlers
-// theme $engine is used instead to store engine instance
 export const state = () => ({
   id: null,
-  compatAppVersion: null, // original app version in which was game created
+  compatAppVersion: null,
   key: null,
   name: null,
   lastMessageId: null,
@@ -86,10 +79,7 @@ export const state = () => ({
   action: null,
   history: null,
   gameChat: null,
-  undo: {
-    allowed: false,
-    depth: 0
-  },
+  undo: { allowed: false, depth: 0 },
   initialRandom: null,
   gameMessages: null,
   gameAnnotations: {},
@@ -136,79 +126,45 @@ export const mutations = {
     state.showGameStats = false
   },
 
-  id (state, value) {
-    state.id = value
-  },
-
-  originAppVersion (state, value) {
-    state.originAppVersion = value
-  },
-
-  key (state, value) {
-    state.key = value ? value.substring(0, 3) + '-' + value.substring(3) : null
-  },
-
-  name (state, value) {
-    state.name = value
-  },
+  id (state, value) { state.id = value },
+  originAppVersion (state, value) { state.originAppVersion = value },
+  key (state, value) { state.key = value ? value.substring(0, 3) + '-' + value.substring(3) : null },
+  name (state, value) { state.name = value },
 
   chatCommit (state, value) {
-    if (state.gameChat) {
-      state.gameChat.push(value.message)
-    }
+    if (state.gameChat) state.gameChat.push(value.message)
   },
 
-  lastMessageId (state, value) {
-    state.lastMessageId = value
-  },
-
-  owner (state, value) {
-    state.owner = value
-  },
-
-  ai (state, value) {
-    state.ai = value
-  },
+  lastMessageId (state, value) { state.lastMessageId = value },
+  owner (state, value) { state.owner = value },
+  ai (state, value) { state.ai = value },
 
   setup (state, value) {
     const { $tiles } = this._vm
     state.setup = value
-    if (value) {
-      state.packSize = $tiles.getPackSize(value.sets, value.rules)
-    }
+    if (value) state.packSize = $tiles.getPackSize(value.sets, value.rules)
   },
 
   options (state, options) {
-    Object.entries(options).forEach(([key, value]) => {
-      Vue.set(state.setup.options, key, value)
-    })
+    Object.entries(options).forEach(([key, value]) => { state.setup.options[key] = value })
   },
 
   slot (state, slot) {
     const idx = state.slots.findIndex(s => s.number === slot.number)
-    Vue.set(state.slots, idx, slot)
+    state.slots[idx] = slot
   },
 
-  slots (state, slots) {
-    state.slots = slots
-  },
-
-  players (state, players) {
-    state.players = players
-  },
+  slots (state, slots) { state.slots = slots },
+  players (state, players) { state.players = players },
 
   resetClock (state, value) {
-    if (value) {
-      state.clock = value
-    } else {
-      const clock = new Array(state.players.length)
-      state.clock = clock.fill(0)
-    }
+    if (value) state.clock = value
+    else state.clock = (new Array(state.players.length)).fill(0)
   },
 
   updateClock (state, { player, clock, shiftLocal = 0 }) {
     if (player !== null && player !== undefined) {
-      Vue.set(state.clock, player, state.clock[player] + clock - state.lastMessageClock)
+      state.clock[player] = state.clock[player] + clock - state.lastMessageClock
     }
     state.lastMessageClock = clock
     state.lastMessageClockLocal = Date.now() + shiftLocal
@@ -219,70 +175,39 @@ export const mutations = {
       if (key === 'players') {
         state.players = zip(state.players, data.players).map(([a, b]) => ({ ...a, ...b }))
       } else {
-        Vue.set(state, key, value)
+        state[key] = value
       }
     })
-    if (data.action === undefined) {
-      state.action = null
-    }
+    if (data.action === undefined) state.action = null
   },
 
-  initialRandom (state, value) {
-    state.initialRandom = value
-  },
+  initialRandom (state, value) { state.initialRandom = value },
 
   appendMessage (state, msg) {
-    if (msg.type === 'UNDO') {
-      state.gameMessages.pop()
-    } else {
-      state.gameMessages.push(msg)
-    }
+    if (msg.type === 'UNDO') state.gameMessages.pop()
+    else state.gameMessages.push(msg)
   },
 
-  gameMessages (state, gameMessages) {
-    state.gameMessages = gameMessages
-  },
-
-  gameAnnotations (state, gameAnnotations) {
-    state.gameAnnotations = gameAnnotations
-  },
-
-  testScenario (state, value) {
-    state.testScenario = value
-  },
-
-  testScenarioResult (state, value) {
-    state.testScenarioResult = value
-  },
-
-  lockUi (state, value) {
-    state.lockUi = value
-  },
-
-  gameChat (state, value) {
-    state.gameChat = value
-  },
-
-  showGameStats (state, value) {
-    state.showGameStats = value
-  }
+  gameMessages (state, gameMessages) { state.gameMessages = gameMessages },
+  gameAnnotations (state, gameAnnotations) { state.gameAnnotations = gameAnnotations },
+  testScenario (state, value) { state.testScenario = value },
+  testScenarioResult (state, value) { state.testScenarioResult = value },
+  lockUi (state, value) { state.lockUi = value },
+  gameChat (state, value) { state.gameChat = value },
+  showGameStats (state, value) { state.showGameStats = value }
 }
 
 export const getters = {
-  // playerSlot: state => idx => state.setup.players[idx].slot,
   colorCssClass: state => player => 'color color-' + state.players[player].slot,
 
   tunnelTokenColorCssClass: state => (token, player, inactive = false) => {
     const [prefix, letter] = token.split('_', 2)
-    if (prefix !== 'TUNNEL') {
-      return ''
-    }
+    if (prefix !== 'TUNNEL') return ''
     const fillCss = inactive ? 'color-inactive-fill' : 'color-fill'
     if (letter === 'A') {
       const { slot } = state.players[player]
       return `color-${slot} ${fillCss} color-overlay tunnel`
     }
-
     const emptySlots = difference(range(9), state.players.map(p => p.slot))
     const slot = emptySlots[player + (letter === 'B' ? 0 : state.players.length)]
     return `color-${slot} ${fillCss} color-overlay tunnel`
@@ -293,34 +218,24 @@ export const getters = {
   },
 
   featureOn: state => ({ position, location }) => {
-    // TODO Aware there can be multiple Inner features with location I, II, III, IV!
-    if (location === 'AS_ABBOT') {
-      location = 'I'
-    }
+    if (location === 'AS_ABBOT') location = 'I'
     return state.features.find(({ places }) => {
       return !!places.find(p => p[0] === position[0] && p[1] === position[1] && p[2] === location)
     })
   },
 
   meepleIdFromSupply: state => (playerIdx, meepleType) => {
-    // what about keep followers and meepkes in same structure
     return state.players[playerIdx].meeples[meepleType][1]
   },
 
   canPayRansom: (state, getters, rootState) => player => {
-    if (state.action === null || state.action.player !== player) {
-      return false
-    }
-    if (state.players[player].sessionId !== rootState.networking.sessionId) {
-      return false
-    }
+    if (state.action === null || state.action.player !== player) return false
+    if (state.players[player].sessionId !== rootState.networking.sessionId) return false
     return !state.flags.ransomPaid && state.history.length && state.players[player].points >= 3
   },
 
   currentTurnLastEvent: state => {
-    if (!state.history || state.history.length === 0) {
-      return null
-    }
+    if (!state.history || state.history.length === 0) return null
     const h = state.history[state.history.length - 1]
     return h.events.length ? h.events[h.events.length - 1] : null
   },
@@ -333,9 +248,7 @@ export const getters = {
   },
 
   isDeployedOnBridge: (state, getters) => meeple => {
-    if (meeple.location !== 'NS' && meeple.location !== 'WE') {
-      return false
-    }
+    if (meeple.location !== 'NS' && meeple.location !== 'WE') return false
     return !!getters.bridges.find(b => isSameFeature(meeple, b))
   },
 
@@ -347,35 +260,25 @@ export const getters = {
   },
 
   isActionLocal (state, getters, rootState) {
-    if (!state.action) {
-      return false
-    }
-    const clientSessionId = rootState.networking.sessionId
-    const actionSessionId = state.players[state.action.player].sessionId
-    return clientSessionId === actionSessionId
+    if (!state.action) return false
+    return rootState.networking.sessionId === state.players[state.action.player].sessionId
   },
 
   isActionAi (state, getters, rootState) {
-    if (!state.action) {
-      return false
-    }
+    if (!state.action) return false
     const clientSessionId = rootState.networking.sessionId
     const actionSessionId = state.players[state.action.player].sessionId
-    const aiPlayer = state.players[state.action.player].ai
-    return clientSessionId === actionSessionId && aiPlayer
+    return clientSessionId === actionSessionId && state.players[state.action.player].ai
   },
 
   localPlayers (state, getters, rootState) {
     const clientSessionId = rootState.networking.sessionId
-    return state.players
-      .map((p, index) => ({ sessionId: p.sessionId, index }))
+    return state.players.map((p, index) => ({ sessionId: p.sessionId, index }))
       .filter(p => clientSessionId === p.sessionId)
       .map(p => p.index)
   },
 
-  isUndoAllowed: (state, getters) => {
-    return state.undo?.allowed && getters.isActionLocal
-  },
+  isUndoAllowed: (state, getters) => state.undo?.allowed && getters.isActionLocal,
 
   ranks (state) {
     const playersWithIndex = state.players.map((p, index) => ({ ...p, index }))
@@ -385,11 +288,7 @@ export const getters = {
     let rank = 0
     const ranks = []
     points.forEach(p => {
-      ranks.push({
-        points: p,
-        players: groups[p],
-        rank: rank + 1
-      })
+      ranks.push({ points: p, players: groups[p], rank: rank + 1 })
       rank += groups[p].length
     })
     return ranks
@@ -399,27 +298,16 @@ export const getters = {
 export const actions = {
   async save ({ state, dispatch }, { onlySetup = false } = {}) {
     return new Promise(async (resolve, reject) => { /* eslint no-async-promise-executor: 0 */
-      let { filePath } = await ipcRenderer.invoke('dialog.showSaveDialog', {
-        title: onlySetup ? 'Save Game Setup' : 'Save Game',
+      let { filePath } = await window.electronAPI.invoke('dialog.showSaveDialog', {
         filters: getSavedGameFilters(),
         properties: ['createDirectory', 'showOverwriteConfirmation']
       })
       if (filePath) {
-        if (extname(filePath) === '') {
-          filePath += '.jcz'
-        }
-
-		const content = generateSaveContent(state, onlySetup)
-
+        if (extname(filePath) === '') filePath += '.jcz'
+        const content = generateSaveContent(state, onlySetup)
         fs.writeFile(filePath, JSON.stringify(content, null, 2), err => {
-          if (err) {
-            reject(err)
-          } else {
-            Vue.nextTick(() => {
-              dispatch(onlySetup ? 'settings/addRecentSetupSave' : 'settings/addRecentSave', { file: filePath, content }, { root: true })
-            })
-            resolve(filePath)
-          }
+          if (err) reject(err)
+          else { nextTick(() => {}); resolve(filePath) }
         })
       } else {
         resolve(null)
@@ -429,23 +317,20 @@ export const actions = {
 
   async savescenario ({ state, dispatch }, {} = {}) {
     return new Promise(async (resolve, reject) => { /* eslint no-async-promise-executor: 0 */
-      let { filePath } = await ipcRenderer.invoke('dialog.showSaveDialog', {
+      let { filePath } = await window.electronAPI.invoke('dialog.showSaveDialog', {
         title: 'Save Test runner Scenario',
         filters: [{ name: 'Test scenarios', extensions: ['jcz'] }],
         properties: ['createDirectory', 'showOverwriteConfirmation']
       })
       if (filePath) {
-        if (extname(filePath) === '') {
-          filePath += '.jcz'
-        }
-
+        if (extname(filePath) === '') filePath += '.jcz'
         const gameState = state
         if (gameState.id) {
-          let content = generateSaveContent( gameState, false)
+          let content = generateSaveContent(gameState, false)
           const names = { 0: 'Ariel', 1: 'John', 2: 'Betty', 3: 'Andy', 4: 'Marie', 5: 'Freddy', 6: 'Mustafa', 7: 'Zuna', 8: 'Sigma' }
           content.players = content.players.map(player => ({
             ...player,
-            name: names[player.slot] || 'Player-'+player.slot.toString()  // fallback if defined more players
+            name: names[player.slot] || 'Player-' + player.slot.toString()
           }))
           const playerNameBySlot = {}
           content.players.forEach(player => {
@@ -460,79 +345,60 @@ export const actions = {
             for (const event of step.events) {
               if (event.points) {
                 for (const p of event.points) {
-                  content.test.assertions.push(`${content.players[p.player].name} scored ${p.name.split('.')[0]} for ${p.points} point${p.points !== 1 ? "s" : ""}.`)
+                  content.test.assertions.push(`${content.players[p.player].name} scored ${p.name.split('.')[0]} for ${p.points} point${p.points !== 1 ? 's' : ''}.`)
                 }
               }
             }
           }
           for (const p of gameState.players) {
-            content.test.assertions.push(`${playerNameBySlot[p.slot]} has ${p.points} point${p.points !== 1 ? "s" : ""}.`)
-            if (p.tokens.KING) {
-              content.test.assertions.push(`${playerNameBySlot[p.slot]} has KING token with size ${p.tokens.KING.size}.`)
-            }
-            if (p.tokens.ROBBER) {
-              content.test.assertions.push(`${playerNameBySlot[p.slot]} has ROBBER token with size ${p.tokens.ROBBER.size}.`)
-            }
+            content.test.assertions.push(`${playerNameBySlot[p.slot]} has ${p.points} point${p.points !== 1 ? 's' : ''}.`)
+            if (p.tokens.KING) content.test.assertions.push(`${playerNameBySlot[p.slot]} has KING token with size ${p.tokens.KING.size}.`)
+            if (p.tokens.ROBBER) content.test.assertions.push(`${playerNameBySlot[p.slot]} has ROBBER token with size ${p.tokens.ROBBER.size}.`)
           }
           content.test.assertions.push(`Phase is ${gameState.phase}`)
-          if (!!gameState.action) {
-            content.test.assertions.push(`Player ${gameState.action.canPass ? 'can' : 'can\'t'} pass`)
+          if (gameState.action) {
+            content.test.assertions.push(`Player ${gameState.action.canPass ? 'can' : "can't"} pass`)
             for (const i of gameState.action.items) {
               let options = []
-              switch(i.type) {
+              switch (i.type) {
                 case 'CaptureFollower':
-          	  	  content.test.assertions.push(`Available action ${i.type}`)
-          	  	  for (const o of i.options) {
-          	        options.push(['{',[o.meepleId,o.featurePointer.feature,o.featurePointer.location,['[',o.featurePointer.position.join(','),']'].join('')].join(','),'}'].join(''))
-          	  	  }
-		          content.test.assertions.push(`CaptureFollower options: ${options.join('; ')}`)
-                  break;
-          	  	case 'Ferries':
-          	  	  content.test.assertions.push(`Available action ${i.type}`)
-          	  	  for (const o of i.options) {
-          	        options.push(['{',[o.feature,o.location,['[',o.position.join(','),']'].join('')].join(','),'}'].join(''))
-          	  	  }
-		          content.test.assertions.push(`Ferries options: ${options.join('; ')}`)
-          	  	  break;
-          	  	case 'Meeple':
-          	  	  content.test.assertions.push(`Available action ${i.type} for ${i.meeple}`)
-                  for (const o of i.options) {
-          	        options.push(['{',[o.feature,o.location,['[',o.position.join(','),']'].join('')].join(','),'}'].join(''))
-          	  	  }
-		          content.test.assertions.push(`Meeple ${i.meeple} options: ${options.join('; ')}`)
-          	  	  break;
+                  content.test.assertions.push(`Available action ${i.type}`)
+                  for (const o of i.options) options.push(['{', [o.meepleId, o.featurePointer.feature, o.featurePointer.location, ['[', o.featurePointer.position.join(','), ']'].join('')].join(','), '}'].join(''))
+                  content.test.assertions.push(`CaptureFollower options: ${options.join('; ')}`)
+                  break
+                case 'Ferries':
+                  content.test.assertions.push(`Available action ${i.type}`)
+                  for (const o of i.options) options.push(['{', [o.feature, o.location, ['[', o.position.join(','), ']'].join('')].join(','), '}'].join(''))
+                  content.test.assertions.push(`Ferries options: ${options.join('; ')}`)
+                  break
+                case 'Meeple':
+                  content.test.assertions.push(`Available action ${i.type} for ${i.meeple}`)
+                  for (const o of i.options) options.push(['{', [o.feature, o.location, ['[', o.position.join(','), ']'].join('')].join(','), '}'].join(''))
+                  content.test.assertions.push(`Meeple ${i.meeple} options: ${options.join('; ')}`)
+                  break
                 case 'TilePlacement':
-          	  	  content.test.assertions.push(`Available action ${i.type} for ${i.tileId}`)
-          	      for (const o of i.options) {
-          	        options.push(`[${o.position.join(',')}] - [${o.rotations.join(',')}]`)
-          	  	  }
-		          content.test.assertions.push(`TilePlacement ${i.tileId} options: ${options.join('; ')}`)
-          	  	  break;
+                  content.test.assertions.push(`Available action ${i.type} for ${i.tileId}`)
+                  for (const o of i.options) options.push(`[${o.position.join(',')}] - [${o.rotations.join(',')}]`)
+                  content.test.assertions.push(`TilePlacement ${i.tileId} options: ${options.join('; ')}`)
+                  break
                 case 'TowerPiece':
-          	  	  content.test.assertions.push(`Available action ${i.type} for ${i.token}`)
-          	      for (const o of i.options) {
-          	        options.push(`[${o.join(',')}]`)
-          	  	  }
-		          content.test.assertions.push(`Tower piece ${i.token} options: ${options.join('; ')}`)
-          	  	  break;
-          	  	case 'Tunnel':
-          	  	  content.test.assertions.push(`Available action ${i.type} for ${i.token}`)
-                  for (const o of i.options) {
-          	        options.push(['{',[o.feature,o.location,['[',o.position.join(','),']'].join('')].join(','),'}'].join(''))
-          	  	  }
-		          content.test.assertions.push(`Tunnel token ${i.token} options: ${options.join('; ')}`)
-          	  	  break;
-          	  }
-          	}
+                  content.test.assertions.push(`Available action ${i.type} for ${i.token}`)
+                  for (const o of i.options) options.push(`[${o.join(',')}]`)
+                  content.test.assertions.push(`Tower piece ${i.token} options: ${options.join('; ')}`)
+                  break
+                case 'Tunnel':
+                  content.test.assertions.push(`Available action ${i.type} for ${i.token}`)
+                  for (const o of i.options) options.push(['{', [o.feature, o.location, ['[', o.position.join(','), ']'].join('')].join(','), '}'].join(''))
+                  content.test.assertions.push(`Tunnel token ${i.token} options: ${options.join('; ')}`)
+                  break
+              }
+            }
           }
           content.test.assertions.push(`Undo ${gameState.undo.allowed ? 'is' : 'is not'} allowed`)
           content.gameId = '1'
           fs.writeFile(filePath, JSON.stringify(content, null, 2), err => {
-            if (err) {
-              reject(err)
-            } else {
-              resolve(filePath)
-            }
+            if (err) reject(err)
+            else resolve(filePath)
           })
         } else {
           resolve(null)
@@ -544,17 +410,13 @@ export const actions = {
   async load ({ commit, dispatch, rootState }, { file: filePath, setupOnly = false } = {}) {
     return new Promise(async (resolve, reject) => {
       if (!filePath) {
-        const { filePaths, canceled } = await ipcRenderer.invoke('open-load-game-dialog', {
+        const { filePaths, canceled } = await window.electronAPI.invoke('open-load-game-dialog', {
           title: $nuxt.$t('index.local.open-saved-game'),
-          filters: getSavedGameFilters(), //[{ name: $nuxt.$t('index.local.saved-game'), extensions: ['jcz'] }],
+          filters: getSavedGameFilters(),
           properties: ['openFile']
         })
-
-        if (!canceled && filePaths.length) {
-          filePath = filePaths[0]
-        } else {
-          resolve(false)
-        }
+        if (!canceled && filePaths.length) filePath = filePaths[0]
+        else { resolve(false); return }
       }
       let sg, slots
       try {
@@ -564,6 +426,7 @@ export const actions = {
         } catch (err) {
           commit('errorMessage', { title: 'File is not valid', content: err + '' }, { root: true })
           reject(err)
+          return
         }
         if (compare(sg.appVersion, SAVED_GAME_COMPATIBILITY, '<')) {
           const msg = `Saves created prior ${SAVED_GAME_COMPATIBILITY} are not supported.`
@@ -571,51 +434,38 @@ export const actions = {
           reject(msg)
           return
         }
-        
-        if (rootState.networking.connectionType=='online') {
+        if (rootState.networking.connectionType === 'online') {
           if (sg.test !== undefined) {
-            const msg = `Saved game contains tests. It is not possible to open in online mode.`
-            commit('errorMessage', { title: 'Load Error', content: msg }, { root: true })
+            commit('errorMessage', { title: 'Load Error', content: 'Saved game contains tests. It is not possible to open in online mode.' }, { root: true })
             return
           }
-          if (sg.replay.length>0) {
-            const msg = `Saved game contains game history. It is not possible to open in online mode.`
-            commit('errorMessage', { title: 'Load Error', content: msg }, { root: true })
+          if (sg.replay.length > 0) {
+            commit('errorMessage', { title: 'Load Error', content: 'Saved game contains game history. It is not possible to open in online mode.' }, { root: true })
             return
           }
         }
-
         if (sg.setup) {
           if (sg.setup.addons) {
             const { $addons } = this._vm
-            if (sg.setup.addons) {
-              const missing = $addons.findMissingAddons(sg.setup.addons)
-
-              if (missing.length) {
-                const msg = `Saved game (or setup) requires addon(s) which are not installed:\n\n${missing.join(', ')}`
-                commit('errorMessage', { title: 'Load Error', content: msg }, { root: true })
-                reject(msg)
-                return
-              }
+            const missing = $addons.findMissingAddons(sg.setup.addons)
+            if (missing.length) {
+              const msg = `Saved game (or setup) requires addon(s) which are not installed:\n\n${missing.join(', ')}`
+              commit('errorMessage', { title: 'Load Error', content: msg }, { root: true })
+              reject(msg)
+              return
             }
           }
-
           sg.setup.rules = { ...getDefaultRules(), ...sg.setup.rules }
         }
 
         const containsSetupOnly = isNil(sg.players) || isNil(sg.initialRandom) || isNil(sg.replay) || isNil(sg.clock) || isNil(sg.gameId)
 
         if (sg.setup && !sg.test && (containsSetupOnly || setupOnly)) {
-          if (rootState.runningTests) {
-            console.error('Loaded game setup from test runner')
-          }
+          if (rootState.runningTests) console.error('Loaded game setup from test runner')
           dispatch('gameSetup/load', sg.setup, { root: true })
-          if (containsSetupOnly) { // don't all file with game to recent setup saves
-            Vue.nextTick(() => {
-              dispatch('settings/addRecentSetupSave', {
-                file: filePath,
-                setup: sg.setup
-              }, { root: true })
+          if (containsSetupOnly) {
+            nextTick(() => {
+              dispatch('settings/addRecentSetupSave', { file: filePath, setup: sg.setup }, { root: true })
               this.$router.push('/game-setup')
               resolve(sg)
             })
@@ -625,33 +475,26 @@ export const actions = {
           return
         }
 
-        slots = sg.players.map((p, i) => {
-          return {
-            number: p.slot,
-            name: p.name,
-            clientId: p.clientId,
-            sessionId: null,
-            ai: p.ai,
-            order: i + 1
-          }
-        })
+        slots = sg.players.map((p, i) => ({
+          number: p.slot,
+          name: p.name,
+          clientId: p.clientId,
+          sessionId: null,
+          ai: p.ai,
+          order: i + 1
+        }))
       } catch (e) {
         reject(e)
         return
       }
 
-      if (sg.test) {
-        slots.forEach(s => { s.clientId = rootState.settings.clientId })
-      }
+      if (sg.test) slots.forEach(s => { s.clientId = rootState.settings.clientId })
 
       commit('game/clear', null, { root: true })
       await dispatch('networking/startServer', {
         gameId: sg.gameId,
         originAppVersion: sg.appVersion,
-        setup: {
-          options: {},
-          ...sg.setup
-        },
+        setup: { options: {}, ...sg.setup },
         initialRandom: sg.initialRandom,
         gameAnnotations: sg.gameAnnotations || {},
         slots,
@@ -661,21 +504,16 @@ export const actions = {
       }, { root: true })
 
       if (sg.test) {
-        commit('id', sg.gameId) // HACK, prevent clear when GAME message is received
+        commit('id', sg.gameId)
         commit('testScenario', sg.test)
         dispatch('game/start', null, { root: true })
       }
-      Vue.nextTick(() => {
-//        dispatch('settings/addRecentSave', { file: filePath, setup: sg.setup }, { root: true })
-      })
+      nextTick(() => {})
       resolve(sg)
 
       if (!rootState.runningTests) {
-        if (sg.test) {
-          this.$router.push('/game')
-        } else if (window.location.pathname !== '/open-game') { // don't redirect if loaded from bookmark tab
-          this.$router.push('/open-game')
-        }
+        if (sg.test) this.$router.push('/game')
+        else if (window.location.pathname !== '/open-game') this.$router.push('/open-game')
       }
     })
   },
@@ -684,15 +522,10 @@ export const actions = {
     const occupiedSlots = sortBy(payload.slots.filter(s => s.order), 'order').map(s => s.number)
     const slots = payload.slots.map(s => {
       if (!s.order) return s
-      return {
-        ...s,
-        order: occupiedSlots.indexOf(s.number) + 1
-      }
+      return { ...s, order: occupiedSlots.indexOf(s.number) + 1 }
     })
 
-    if (payload.state === 'R') {
-      commit('lockUi', true)
-    }
+    if (payload.state === 'R') commit('lockUi', true)
     if (state.id !== payload.gameId) {
       commit('clear')
       commit('originAppVersion', payload.originAppVersion)
@@ -706,7 +539,7 @@ export const actions = {
     commit('gameMessages', payload.replay)
     commit('gameChat', payload.chat ?? null)
     commit('owner', payload.owner)
-    commit('id', payload.gameId) // set as latest commit, /open-game rendering waits for it
+    commit('id', payload.gameId)
   },
 
   handleSlotMessage ({ state, commit }, payload) {
@@ -716,7 +549,6 @@ export const actions = {
         if (selectedSlot.sessionId) {
           commit('slot', { ...payload, order: selectedSlot.order })
         } else {
-          // take a slot
           const order = state.slots.filter(s => s.clientId).length + 1
           commit('slot', { ...payload, order })
         }
@@ -724,9 +556,7 @@ export const actions = {
         const order = selectedSlot.order
         for (let i = 0; i < state.slots.length; i++) {
           const slot = state.slots[i]
-          if (slot.sessionId && slot.order > order) {
-            commit('slot', { ...slot, order: slot.order - 1 })
-          }
+          if (slot.sessionId && slot.order > order) commit('slot', { ...slot, order: slot.order - 1 })
         }
         commit('slot', payload)
       }
@@ -748,7 +578,7 @@ export const actions = {
   async chat ({ state }, payload) {
     const { $connection } = this._vm
     payload.gameId = state.id
-    $connection.send({ type: 'GAME_CHAT', payload: payload })
+    $connection.send({ type: 'GAME_CHAT', payload })
   },
 
   async handleStartMessage ({ state, commit, dispatch, rootState }, message) {
@@ -757,9 +587,7 @@ export const actions = {
     if (message.payload.seating) {
       const { seating } = message.payload
       slots = state.slots.map(slot => {
-        if (seating[slot.number]) {
-          return { ...slot, order: seating[slot.number] }
-        }
+        if (seating[slot.number]) return { ...slot, order: seating[slot.number] }
         return slot
       })
       commit('slots', slots)
@@ -769,16 +597,9 @@ export const actions = {
 
     const players = slots.filter(s => s.clientId).map(s => ({ ...s }))
     players.sort((a, b) => a.order - b.order)
-    players.forEach(s => {
-      s.slot = s.number
-      delete s.number
-      delete s.order
-    })
-    if (state.players === null) {
-      commit('players', players)
-    } else {
-      commit('update', { players })
-    }
+    players.forEach(s => { s.slot = s.number; delete s.number; delete s.order })
+    if (state.players === null) commit('players', players)
+    else commit('update', { players })
     commit('resetClock')
 
     const loggingEnabled = rootState.settings.devMode
@@ -787,42 +608,19 @@ export const actions = {
       commit('errorMessage', { title: 'Engine error', content: data + '' }, { root: true })
     })
 
-    // if (state.originAppVersion && state.originAppVersion !== getAppVersion()) {
-    //   await engine.write(`%compat ${state.originAppVersion}`)
-    // }
+    for (const xml of this._vm.$tiles.xmls) await engine.write(`%load ${xml}`)
 
-    for (const xml of this._vm.$tiles.xmls) {
-      await engine.write(`%load ${xml}`)
-    }
-
-    if (state.gameMessages?.length) {
-      await engine.enableBulkMode()
-    }
+    if (state.gameMessages?.length) await engine.enableBulkMode()
 
     let annotations = {}
     if (Object.keys(state.gameAnnotations).length) {
       const { drawOrder, endTurn } = state.gameAnnotations
       if (drawOrder || endTurn) {
-        const params = {
-          drawOrder: drawOrder || []
-        }
-        if (endTurn) {
-          params.drawLimit = endTurn
-        }
-        annotations = {
-          tilePack: {
-            className: 'com.jcloisterzone.debug.ForcedDrawTilePack',
-            params
-          }
-        }
+        const params = { drawOrder: drawOrder || [] }
+        if (endTurn) params.drawLimit = endTurn
+        annotations = { tilePack: { className: 'com.jcloisterzone.debug.ForcedDrawTilePack', params } }
       }
     }
-
-    // // uncomment for online server game finish debugging
-    // annotations.tilePack = {
-    //   className: 'com.jcloisterzone.debug.ForcedDrawTilePack',
-    //   params: { drawLimit: 3 }
-    // }
 
     const setupMessage = {
       type: 'GAME_SETUP',
@@ -835,18 +633,13 @@ export const actions = {
       }
     }
 
-    if (message.id) {
-      commit('lastMessageId', message.id)
-    }
+    if (message.id) commit('lastMessageId', message.id)
 
     if (state.gameMessages?.length) {
       commit('resetClock', computeClock(players.length, state.gameMessages))
       await engine.writeMessage(setupMessage)
-      for (const msg of state.gameMessages) {
-        await engine.writeMessage(msg)
-      }
+      for (const msg of state.gameMessages) await engine.writeMessage(msg)
       const lastMessage = state.gameMessages[state.gameMessages.length - 1]
-      // TODO shift local
       commit('updateClock', { player: null, clock: lastMessage.clock, shiftLocal: lastMessage.clock - message.clock })
       const { response, hash } = await engine.disableBulkMode()
       await dispatch('applyEngineResponse', { response, hash, message: lastMessage, allowAutoCommit: false })
@@ -855,16 +648,11 @@ export const actions = {
       const { response, hash } = await engine.writeMessage(setupMessage)
       await dispatch('applyEngineResponse', { response, hash, message: null, allowAutoCommit: false })
     }
-    if (state.gameMessages === null) {
-      commit('gameMessages', [])
-    }
+    if (state.gameMessages === null) commit('gameMessages', [])
 
     commit('lockUi', false)
     const aiPlayer = state.players[state.action?.player]?.ai && rootState.networking.sessionId === state.players[state.action?.player]?.sessionId
-    
-    if (aiPlayer) {
-          await dispatch('aiEngineRequest', { })
-    }
+    if (aiPlayer) await dispatch('aiEngineRequest', {})
   },
 
   close ({ dispatch, commit, rootState }) {
@@ -877,9 +665,7 @@ export const actions = {
   },
 
   async apply ({ state }, { type, payload, force = false }) {
-    if (state.lockUi && !force) {
-      return
-    }
+    if (state.lockUi && !force) return
     const { $connection } = this._vm
     const id = randomId()
     const message = {
@@ -893,7 +679,6 @@ export const actions = {
       const usedTiles = state.packSize - state.tilePack.size
       message.progress = `${usedTiles}/${state.packSize}`
     }
-
     $connection.send(message)
   },
 
@@ -906,36 +691,16 @@ export const actions = {
     }
     const engine = this._vm.$engine.get()
     const { response, hash } = await engine.writeMessage(message)
-    if (message.type == 'AI' && response.type == 'AI_MESSAGE') {
-      // Response from engine with AI suggestion
-      const { $connection } = this._vm
-      const aiPlayerResponse = {
-      	type: response.payload.type,
-      	payload: response.payload.payload,
-      	gameId: state.id,
-      	player: response.payload.player,
-      	seq: (state.gameMessages.length+1),
-      	clock: computeClock(state.players.length, state.gameMessages)
-      }
-      await dispatch('apply', response.payload);
-      
-      console.log('AI Response message',aiPlayerResponse)
-//      await dispatch('applyEngineResponse', { response, hash, message, allowAutoCommit: true })
-//      $connection.send(aiPlayerResponse)
-      
+    if (message.type === 'AI' && response.type === 'AI_MESSAGE') {
+      await dispatch('apply', response.payload)
       return
     }
-    
-    if (message.type != 'AI') {
-	  commit('appendMessage', message)
-	}
+    if (message.type !== 'AI') commit('appendMessage', message)
     commit('lastMessageId', message.id)
     commit('updateClock', { player: state.action?.player, clock: message.clock || 0 })
     await dispatch('applyEngineResponse', { response, hash, message, allowAutoCommit: true })
     const aiPlayer = state.players[response.action?.player]?.ai && rootState.networking.sessionId === state.players[response.action?.player]?.sessionId
-    if (aiPlayer) {
-      await dispatch('aiEngineRequest', { })
-    }
+    if (aiPlayer) await dispatch('aiEngineRequest', {})
   },
 
   async applyEngineResponse ({ state, commit, dispatch, rootState }, { response, hash, message, allowAutoCommit }) {
@@ -961,42 +726,25 @@ export const actions = {
     } else {
       const gameFinished = state.phase !== response.phase && response.phase === 'GameOverPhase'
       commit('update', response)
-      if (state.testScenario) {
-        commit('testScenarioResult', verifyScenario(state, state.testScenario))
-      }
-
+      if (state.testScenario) commit('testScenarioResult', verifyScenario(state, state.testScenario))
       if (gameFinished) {
         commit('showGameStats', true)
         dispatch('apply', {
           type: 'GAME_FINISHED',
-          payload: {
-            gameId: state.id,
-            points: state.players.map(p => p.points)
-          },
+          payload: { gameId: state.id, points: state.players.map(p => p.points) },
           force: true
         })
       }
     }
   },
 
-  async aiEngineRequest ({ state, commit, dispatch, rootState }, { }) {
-    await dispatch('apply', {
-      type: 'AI',
-      payload: {
-        gameId: state.id
-      },
-      force: true
-    })
+  async aiEngineRequest ({ state, commit, dispatch, rootState }, {} = {}) {
+    await dispatch('apply', { type: 'AI', payload: { gameId: state.id }, force: true })
   },
 
   async undo ({ getters, dispatch }) {
     if (getters.isUndoAllowed) {
-      await dispatch('apply', {
-        type: 'UNDO',
-        payload: {
-          gameId: state.id
-        }
-      })
+      await dispatch('apply', { type: 'UNDO', payload: { gameId: state.id } })
     }
   }
 }

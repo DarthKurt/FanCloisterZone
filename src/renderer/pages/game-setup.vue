@@ -1,192 +1,90 @@
 <template>
-  <GameSetupGrid v-if="loaded" :sets="sets" :rules="rules" :show-detail="tab > 0" :show-pack-size="tab > 0">
-    <template #header>
-      <v-tabs v-model="tab" @change="onTabChange">
-        <v-tab><v-icon small>far fa-heart</v-icon></v-tab>
-        <v-tab><v-icon small class="icon">fas fa-square</v-icon>{{ $t('game-setup.header.tiles') }}</v-tab>
-        <v-tab active-class="active">
-          <div class="meeple icon">
-            <Meeple type="SmallFollower" />
+  <section class="placeholder-page view">
+    <div class="panel">
+      <div class="eyebrow">Phase 5</div>
+      <h1>{{ t('menu.new-game') }}</h1>
+      <p v-if="!hasSetup">No setup is prepared yet. Start from the home screen to create one.</p>
+      <template v-else>
+        <p>The full setup grid is still being migrated. The underlying Vuex state is live and ready for the next component pass.</p>
+        <dl class="summary-grid">
+          <div>
+            <dt>Selected Sets</dt>
+            <dd>{{ setCount }}</dd>
           </div>
-          {{ $t('game-setup.header.components') }}
-        </v-tab>
-        <v-tab><v-icon small class="icon">fas fa-book</v-icon>{{ $t('game-setup.header.rules') }}</v-tab>
-        <v-tab v-if="!ai"><v-icon small class="icon">far fa-clock</v-icon>{{ $t('game-setup.header.timer') }}</v-tab>
-      </v-tabs>
-
-      <HeaderMessage v-if="tab > 0" :sets="sets" />
-      <HeaderGameButton v-if="tab > 0" :title="$t('button.create')" :sets="sets" @click="createGame" />
-      <HeaderLeaveGameButton :title="$t('menu.leave-game')" @click="leaveGame" />
-      
-    </template>
-
-    <template #main>
-      <BookmarksTab v-show="tab === 0" @load="tab = 1" @select="selectedSetupDetail = $event" />
-      <TileSetsTab v-show="tab === 1" />
-      <FiguresTab v-show="tab === 2" />
-      <RulesTab v-show="tab === 3" />
-      <TimerTab v-if="!ai" v-show="tab === 4" />
-    </template>
-
-    <template #detail>
-      <div v-if="tab > 0" class="detail-pack">
-        <h2>{{ $t('game-setup.selected-tiles') }}</h2>
-        <TileDistribution
-          :tile-size="$vuetify.breakpoint.height > 768 ? 100 : 80"
-          :sets="sets"
-          :rules="rules"
-          @tile-click="onTileClick"
-        />
-        <GameAnnotationsPanel v-if="settings.devMode && $store.state.networking.connectionType !== 'online'" ref="annotationsPanel" />
+          <div>
+            <dt>Rules</dt>
+            <dd>{{ ruleCount }}</dd>
+          </div>
+          <div>
+            <dt>AI Enabled</dt>
+            <dd>{{ aiEnabled ? 'Yes' : 'No' }}</dd>
+          </div>
+        </dl>
+      </template>
+      <div class="actions">
+        <v-btn color="primary" :disabled="!hasSetup" @click="createGame">{{ t('button.create') }}</v-btn>
+        <v-btn variant="text" @click="router.push('/')">{{ t('button.close') }}</v-btn>
       </div>
-    </template>
-  </GameSetupGrid>
+    </div>
+  </section>
 </template>
 
-<script>
-import { ipcRenderer } from 'electron'
-import { mapGetters, mapState } from 'vuex'
+<script setup>
+import { computed } from 'vue'
 
-import BookmarksTab from '@/components/game-setup/tabs/BookmarksTab'
-import FiguresTab from '@/components/game-setup/tabs/FiguresTab'
-import GameAnnotationsPanel from '@/components/dev/GameAnnotationsPanel'
-import GameSetupGrid from '@/components/game-setup/GameSetupGrid'
-import HeaderMessage from '@/components/game-setup/HeaderMessage'
-import HeaderGameButton from '@/components/game-setup/HeaderGameButton'
-import HeaderLeaveGameButton from '@/components/game-setup/HeaderLeaveGameButton'
-import Meeple from '@/components/game/Meeple'
-import TileDistribution from '@/components/TileDistribution'
-import TileSetsTab from '@/components/game-setup/tabs/TileSetsTab'
-import TimerTab from '@/components/game-setup/tabs/TimerTab'
-import RulesTab from '@/components/game-setup/tabs/RulesTab'
+const { $store } = useNuxtApp()
+const router = useRouter()
+const { t } = useI18n()
 
-export default {
-  components: {
-    BookmarksTab,
-    FiguresTab,
-    GameSetupGrid,
-    GameAnnotationsPanel,
-    HeaderMessage,
-    HeaderGameButton,
-    HeaderLeaveGameButton,
-    Meeple,
-    TileDistribution,
-    TileSetsTab,
-    TimerTab,
-    RulesTab
-  },
+const hasSetup = computed(() => !!$store.state.gameSetup.sets)
+const setCount = computed(() => Object.keys($store.state.gameSetup.sets || {}).length)
+const ruleCount = computed(() => Object.keys($store.state.gameSetup.rules || {}).length)
+const aiEnabled = computed(() => $store.state.gameSetup.ai)
 
-  data () {
-    const tabParam = this.$route.query.tab
-    return {
-      tab: tabParam === undefined ? 1 : ~~tabParam,
-      selectedSetupDetail: null
-    }
-  },
-
-  computed: {
-    ...mapState({
-      ai: state => state.gameSetup.ai,
-      sets: state => state.gameSetup.sets,
-      rules: state => state.gameSetup.rules,
-      detail: state => state.gameSetup.detail,
-      settings: state => state.settings
-    }),
-
-    ...mapGetters({
-      loaded: 'loaded'
-    })
-  },
-
-  beforeCreate () {
-    // useful for dev mode, if setup not exist, redirect to home
-    if (this.$store.state.gameSetup.sets == null) {
-      this.$store.dispatch('game/close')
-      this.$router.push('/')
-      // it would be nice to create one, but also wait for artwork load is needed
-      // this.$store.dispatch('gameSetup/newGame')
-    }
-  },
-
-  methods: {
-    async createGame () {
-      await this.$store.dispatch('gameSetup/createGame')
-    },
-
-    async leaveGame () {
-      await ipcRenderer.emit('menu.leave-game')
-    },
-
-    onTileClick (tileId, maxCount) {
-      if (this.settings.devMode && this.$store.state.networking.connectionType !== 'online') {
-        this.$refs.annotationsPanel.appendTile(tileId, maxCount)
-      }
-    },
-
-    onTabChange () {
-      window.scrollTo(0, 0)
-    }
-  }
+async function createGame () {
+  await $store.dispatch('gameSetup/createGame')
 }
 </script>
 
-<style lang="sass" scoped>
-*
-  user-select: none
+<style scoped>
+.placeholder-page {
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
 
-.detail-pack
-  padding: 20px
+.panel {
+  width: min(100%, 720px);
+  border-radius: 24px;
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.04);
+}
 
-  h2
-    text-align: center
-    margin-bottom: $panel-gap
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
 
-    font-weight: 300
-    font-size: 16px
-    text-transform: uppercase
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
 
-    +theme using ($theme)
-      color: map-get($theme, 'gray-text-color')
+.summary-grid dt {
+  font-weight: 600;
+}
 
-header
-  .warning-text, .info-text
-    font-size: 24px
-    white-space: nowrap
-    background-color: #F44336
-    color: white
-    padding: 0 20px
-    border-radius: 4px
+.summary-grid dd {
+  margin: 0.25rem 0 0;
+}
 
-.dev-panel
-  border-top: 1px solid black
-  margin-top: 20px
-  opacity: 0.1
-  min-height: 200px
-
-  &.visible
-    opacity: 1
-
-  h5
-    margin-top: 10px
-    text-align: center
-    
-.meeple
-  svg
-    width: 18px
-    height: 18px
-    +theme using ($theme)
-      fill: map-get($theme, 'cards-text')
-
-.active
-  .meeple
-    svg
-      fill: var(--v-primary-base) !important
-      
-.icon, .meeple
-  margin-right: 1ex
-  
-@media (max-height: 768px)
-  .detail-pack
-    padding: 10px
-
+.actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
 </style>
