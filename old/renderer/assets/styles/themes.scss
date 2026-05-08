@@ -1,0 +1,136 @@
+$text-color-light: rgba(0, 0, 0, 0.87);
+
+$theme-light: (
+  'text-color': $text-color-light,
+  'line-color': #eee,
+  'line-color-light': #ddd,
+  'gray-text-color': #757575,
+  'disabled-fill': #757575,
+  'disabled-rules-fill': #aaa,
+  'cards-bg': #fff,
+  'cards-text': $text-color-light,
+  'cards-meeple-overlay': white,
+  'cards-selected-bg': #D7CCC8,
+  'cards-selected-text': #4E342E,
+  'cards-selected-shadow': (0 2px 4px 0 rgba(0, 0, 0, 0.15), 0 3px 10px 0 rgba(0, 0, 0, 0.10)),
+  'cards-selected-meeple': #E53935,
+  'cards-selected-meeple-overlay': white,
+  'cards-link-hover': #3E2723,
+  'cards-selected-link-hover': #3E2723,
+  'board-bg': #F5F5F5,
+  'link-detail-color': #eee,
+  'link-detail-selected-color': #C3B9B6,
+  'opaque-bg': rgba(255, 255, 255, 0.92),
+  'removed-color': #DD2C00,
+  'tile-placement-local': #c0c0c0,
+  'tile-placement-remote': #e9e9e9,
+  'action-panel-disabled-fill': #999,
+  'action-panel-disabled-overlay': white,
+  'action-panel-active-bg': #ddd,
+  'action-panel-hover-bg': #f6f6f6,
+  'emphasize-lightbox-fill': rgba(255, 255, 255, 0.7),
+  'player-panel-name-bg': #f0f0f0,
+  'player-panel-name-color': #555,
+  'player-panel-active-name-bg': #ffffff49,
+  'player-panel-active-name-color': black,
+  'player-panel-count-bg': #e3e3e3,
+  'player-panel-count-text': black,
+  'player-panel-size-icon': #bbb,
+  'player-panel-size-text': white,
+  'overview-tile-bg': #fff,
+  'overview-tile-fill': $text-color-light,
+  'overview-tile-meeple-fill': #E8F5E9,
+  'overview-tile-off-bg': #fff,
+  'overview-tile-off-fill': #FFEBEE,
+  'overview-tile-off-overlay': black,
+  'overview-tile-quantity': #03a9f4,
+  'expr-units-bg': #fff4db,
+  'expr-units-text': black,
+  'slot-open-bg': white,
+  'slot-local-bg': #D7CCC8,
+  'slot-remote-bg': #ccc,
+  'slot-open-text': #444,
+  'slot-local-text': #444,
+  'slot-remote-text': #444,
+  'slot-assign-text': #444,
+  'disconnected-filter': invert(0.25),
+  'local-player-color': var(--v-primary-darken2),
+  'update-box-backgrouncolor': var(--v-primary-darken1)
+);
+
+
+// theme from 4.x
+// mainBg: #282c34
+// bgColor: #21252B
+// panel bg: #21252b
+
+$cards-bg-dark: #1E1E1E;
+$cards-text-dark: rgba(255, 255, 255, 0.6);
+
+$theme-dark: (
+  'text-color': white,
+  'line-color': #323232,
+  'line-color-light': #444,
+  'gray-text-color': #bbb,
+  'disabled-fill': #777,
+  'disabled-rules-fill': #aaa,
+  'cards-bg':  $cards-bg-dark,
+  'cards-text': $cards-text-dark,
+  'cards-meeple-overlay': white,
+  'cards-selected-bg': #59677a,
+  'cards-selected-text': #dae2ed,
+  'cards-selected-shadow': (0 2px 4px 0 rgba(0, 0, 0, 0.1), 0 3px 8px 0 rgba(0, 0, 0, 0.05)),
+  'cards-selected-meeple': #5ea5ff,
+  'cards-selected-meeple-overlay': white,
+  'cards-link-hover': white,
+  'cards-selected-link-hover': #37474F,
+  'board-bg': #282c34,
+  'link-detail-color': #373737,
+  'link-detail-selected-color': #445163,
+  'opaque-bg': rgba(30, 30, 30, 0.92),
+  'removed-color': #ff957a,
+  'tile-placement-local': #4e535c,
+  'tile-placement-remote': #2F333B,
+  'action-panel-disabled-fill': #777,
+  'action-panel-disabled-overlay': white,
+  'action-panel-active-bg': #7a7878,
+  'action-panel-hover-bg': #cfcccc,
+  'emphasize-lightbox-fill': rgba(0, 0, 0, 0.7),
+  'player-panel-name-bg': #2e2d2d,
+  'player-panel-name-color': #aaa,
+  'player-panel-active-name-bg': #2e2d2d55,
+  'player-panel-active-name-color': white,
+  'player-panel-count-bg': #2e2d2d,
+  'player-panel-count-text': white,
+  'player-panel-size-icon': #bbb,
+  'player-panel-size-text': black,
+  'overview-tile-bg':$cards-bg-dark,
+  'overview-tile-fill': rgba(255, 255, 255, 0.8),
+  'overview-tile-meeple-fill':#E8F5E9,
+  'overview-tile-off-bg': $cards-bg-dark,
+  'overview-tile-off-fill': #99685f,
+  'overview-tile-off-overlay': black,
+  'overview-tile-quantity': #283593,
+  'expr-units-bg': #59677a,
+  'expr-units-text': #dae2ed,
+  'slot-open-bg': $cards-bg-dark,
+  'slot-local-bg': #59677a,
+  'slot-remote-bg': #3d4752,
+  'slot-open-text': #bbb,
+  'slot-local-text': #dae2ed,
+  'slot-remote-text': #bbb,
+  'slot-assign-text': #bbb,
+  'disconnected-filter': invert(1),
+  'local-player-color': var(--v-primary-lighten2),
+  'update-box-backgrouncolor': var(--v-primary-lighten1)
+);
+
+@mixin theme {
+  #app.theme--light & {
+    @content($theme-light);
+  }
+
+  #app.theme--dark & {
+    @content($theme-dark);
+  }
+}

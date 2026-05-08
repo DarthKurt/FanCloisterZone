@@ -25,9 +25,7 @@ class ConnectionHandler {
     this.messageBuffer.push(message)
     if (!this.onMessageLock) {
       this.onMessageLock = true
-      while (this.messageBuffer.length) {
-        await this.processMessage(this.messageBuffer.shift())
-      }
+      while (this.messageBuffer.length) await this.processMessage(this.messageBuffer.shift())
       this.onMessageLock = false
     }
   }
@@ -35,7 +33,7 @@ class ConnectionHandler {
   async processMessage (message) {
     const { commit, state, dispatch, rootState } = this.ctx
     const { type, payload } = message
-	if (ENGINE_MESSAGES.has(type)) {
+    if (ENGINE_MESSAGES.has(type)) {
       await dispatch('game/handleEngineMessage', message, { root: true })
     } else if (type === 'WELCOME') {
       const reconnected = !!state.reconnectAttempt
@@ -44,18 +42,10 @@ class ConnectionHandler {
       commit('reconnectAttempt', null)
       if (state.connectionType === 'online') {
         if (reconnected && rootState.game.id) {
-          const payload = { gameId: rootState.game.id }
+          const p = { gameId: rootState.game.id }
           const lastMsg = last(rootState.game.gameMessages)
-          if (lastMsg) {
-            payload.lastMessage = {
-              id: lastMsg.id,
-              seq: lastMsg.seq
-            }
-          }
-          await this.$connection.send({
-            type: 'JOIN_GAME',
-            payload
-          })
+          if (lastMsg) p.lastMessage = { id: lastMsg.id, seq: lastMsg.seq }
+          await this.$connection.send({ type: 'JOIN_GAME', payload: p })
         } else {
           this.$router.push('/online')
         }
@@ -69,13 +59,9 @@ class ConnectionHandler {
       await dispatch('game/handleSlotMessage', payload, { root: true })
     } else if (type === 'START') {
       await dispatch('game/handleStartMessage', message, { root: true })
-      if (!rootState.runningTests) {
-        this.$router.push('/game')
-      }
+      if (!rootState.runningTests) this.$router.push('/game')
     } else if (type === 'RENAME_GAME') {
-      if (payload.gameId === rootState.game.id) {
-        commit('game/name', payload.name, { root: true })
-      }
+      if (payload.gameId === rootState.game.id) commit('game/name', payload.name, { root: true })
     } else if (type === 'GAME') {
       if (payload.setup.addons) {
         const missing = this.$addons.findMissingAddons(payload.setup.addons)
@@ -87,18 +73,11 @@ class ConnectionHandler {
         }
       }
 
-      if (payload.replay === true) {
-        payload.replay = rootState.game.gameMessages
-      }
+      if (payload.replay === true) payload.replay = rootState.game.gameMessages
 
       await dispatch('game/handleGameMessage', payload, { root: true })
-      if (payload.state === 'R' || payload.state === 'F') { // running or finished
-        await dispatch('game/handleStartMessage', {
-          clock: message.clock,
-          id: null,
-          payload: {}
-        }, { root: true })
-
+      if (payload.state === 'R' || payload.state === 'F') {
+        await dispatch('game/handleStartMessage', { clock: message.clock, id: null, payload: {} }, { root: true })
         if (!rootState.runningTests) {
           if (this.$router.currentRoute.path !== '/game') {
             commit('board/reset', null, { root: true })
@@ -111,11 +90,8 @@ class ConnectionHandler {
           this.$router.push('/open-game')
           const { preferredColor } = rootState.settings
           if (preferredColor !== null && !payload.replay) {
-            // player has auto assign enabled and game is a new game
             const slot = payload.slots.find(s => s.number === preferredColor && !s.clientId)
-            if (slot) {
-              await dispatch('gameSetup/takeSlot', { number: slot.number }, { root: true })
-            }
+            if (slot) await dispatch('gameSetup/takeSlot', { number: slot.number }, { root: true })
           }
         }
       }
@@ -130,7 +106,6 @@ class ConnectionHandler {
       commit('online/alertMessage', { message: payload }, { root: true })
     } else {
       console.error(payload)
-//      throw new Error(`Unhandled message ${type}`)
     }
   }
 
@@ -140,15 +115,10 @@ class ConnectionHandler {
     if ([1001, 1006, 1007, 4001].includes(errCode) || reconnecting) {
       const attempt = reconnecting ? state.reconnectAttempt + 1 : 1
       let delay
-      if (attempt === 1) {
-        delay = 250
-      } else if (attempt < 3) {
-        delay = 1000
-      } else if (attempt <= 5) {
-        delay = 2000
-      } else {
-        delay = 6000
-      }
+      if (attempt === 1) delay = 250
+      else if (attempt < 3) delay = 1000
+      else if (attempt <= 5) delay = 2000
+      else delay = 6000
       commit('connectionStatus', STATUS_RECONNECTING)
       commit('reconnectAttempt', attempt)
       console.log(`Connection interrupted. Next attempt (${attempt}) in ${delay}ms`)
@@ -157,11 +127,7 @@ class ConnectionHandler {
         try {
           await dispatch('connect', { host: this.host, connectionType: state.connectionType })
         } catch (err) {
-          if (!err.error?.errno) {
-            // unexpected error
-            console.error(err)
-          }
-          // do nothing, reconnect is handled from on Close
+          if (!err.error?.errno) console.error(err)
         }
       }, delay)
     } else {
@@ -176,41 +142,23 @@ class ConnectionHandler {
 
 export const state = () => ({
   sessionId: null,
-  connectionType: null, // direct / online
+  connectionType: null,
   connectionStatus: null,
   reconnectAttempt: null
 })
 
 export const mutations = {
-  sessionId (state, sessionId) {
-    state.sessionId = sessionId
-  },
-
-  connectionType (state, connectionType) {
-    state.connectionType = connectionType
-  },
-
-  connectionStatus (state, value) {
-    state.connectionStatus = value
-  },
-
-  reconnectAttempt (state, value) {
-    state.reconnectAttempt = value
-  }
+  sessionId (state, sessionId) { state.sessionId = sessionId },
+  connectionType (state, connectionType) { state.connectionType = connectionType },
+  connectionStatus (state, value) { state.connectionStatus = value },
+  reconnectAttempt (state, value) { state.reconnectAttempt = value }
 }
 
 export const actions = {
   async startServer ({ state, commit, dispatch }, game) {
     if (state.connectionType === 'online') {
       const { $connection } = this._vm
-      $connection.send({
-        type: 'CREATE_GAME',
-        payload: {
-          name: '',
-          setup: game.setup,
-          slots: game.slots.length
-        }
-      })
+      $connection.send({ type: 'CREATE_GAME', payload: { name: '', setup: game.setup, slots: game.slots.length } })
     } else {
       const { $server } = this._vm
       await $server.start(game)
@@ -230,12 +178,8 @@ export const actions = {
       commit('connectionStatus', STATUS_CONNECTING)
     }
     const { $connection, $addons } = this._vm
-    if (!host.match(/:\d+/) && connectionType === 'direct') {
-      host = `${host}:${rootState.settings.port}`
-    }
-    if (!host.match(/^\w+:\/\//)) {
-      host = 'ws://' + host
-    }
+    if (!host.match(/:\d+/) && connectionType === 'direct') host = `${host}:${rootState.settings.port}`
+    if (!host.match(/^\w+:\/\//)) host = 'ws://' + host
     rootState.onlineHostName = (new URL(host)).hostname
     return new Promise((resolve, reject) => {
       const handler = new ConnectionHandler(ctx, host, this.$router, $addons, $connection, resolve)
@@ -282,17 +226,12 @@ export const actions = {
 
   close ({ commit, rootState }) {
     const { $server, $connection } = this._vm
-    if (reconnectTimeout) {
-      clearTimeout(reconnectTimeout)
-      reconnectTimeout = null
-    }
+    if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null }
     $connection.disconnect()
     $server.stop()
     commit('connectionType', null)
     commit('connectionStatus', null)
     commit('reconnectAttempt', null)
-    if (!rootState.runningTests) {
-      this.$router.push('/')
-    }
+    if (!rootState.runningTests) this.$router.push('/')
   }
 }

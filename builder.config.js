@@ -104,6 +104,7 @@ module.exports = {
   files: [
     'package.json',
     { from: 'dist/main/', to: 'dist/main/' },
+    { from: 'dist/preload/', to: 'dist/preload/' },
     { from: 'dist/renderer', to: 'dist/renderer/' },
     { from: 'src/resources/', to: 'dist/resources/' }
   ],

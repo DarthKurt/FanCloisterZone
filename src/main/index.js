@@ -1,11 +1,16 @@
 /* globals INCLUDE_RESOURCES_PATH */
 import path from 'path'
 
-import { app, BrowserWindow, ipcMain, powerMonitor } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { dialog as dialogElectron } from 'electron'
+import fs from 'fs'
+import { execFile } from 'child_process'
+import crypto from 'crypto'
+import unzipper from 'unzipper'
+import { File } from 'megajs'
+import { pipeline } from 'stream/promises'
 import { autoUpdater } from 'electron-updater'
 import electronLogger from 'electron-log'
-import fs from 'fs'
 
 import settings from './settings'
 import menu from './modules/menu'
@@ -19,189 +24,266 @@ import installer from './modules/installer'
 import addonDefaults from './modules/addonDefaults'
 
 import RPC from 'discord-rpc'
+import {
+  resolveGetAppVersion,
+  onSetLocalGame,
+  onLoadGameDialog,
+  onAllWindowsClosed,
+  createWindow
+} from './main.lib.mjs'
+import { on } from 'events'
 
 autoUpdater.logger = electronLogger
-autoUpdater.logger.transports.file.level = 'info'
+if (electronLogger.transports?.file) {
+  electronLogger.transports.file.level = 'info'
+}
 
 const modules = []
 const dialogLocks = new WeakMap()
+const state = new WeakMap()
 
-function getAppVersion() {
-  if (process.env.NODE_ENV === 'development') {
-    // Read version from your package.json in development
-    const packageJsonPath = path.join(process.cwd(), 'package.json')
-    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'))
-    return packageJson.version
-  }
-  return app.getVersion()
-}
-let hasLocalGame = false
-let isForceClosing = false
+const onGetAppVersion = resolveGetAppVersion(app)
 
-ipcMain.handle("get-app-version", () => {
-  return getAppVersion()
-})
-
-ipcMain.on('set-local-game', (_, value) => {
-  hasLocalGame = value
-})
-
-ipcMain.handle('open-load-game-dialog', async (event, options) => {
-  const win = BrowserWindow.fromWebContents(event.sender)
-  if (!win) return { canceled: true }
-
-  // Prevent multiple dialogs per window
-  if (dialogLocks.get(win)) {
-    win.focus();
-    return { canceled: true }
-  }
-
-  dialogLocks.set(win, true)
-
-  try {
-    return await dialogElectron.showOpenDialog(win, {
-      ...options,
-      modal: true,
-      parent: win
-    })
-  } finally {
-    dialogLocks.set(win, false);
-    if (!win.isDestroyed()) win.focus()
-  }
-})
-
-function generateInstanceId() {
-    // Use timestamp + process ID so each instance is unique
-    return `com.myapp.instance.${Date.now()}.${process.pid}`
-}
-app.setAppUserModelId(generateInstanceId()) // Prevent grouping app icons
+app.setAppUserModelId(`com.fancloisterzone.instance.${Date.now()}.${process.pid}`)
 
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('no-sandbox')
 }
 
-async function createWindow () {
-  const win = new BrowserWindow({
-    height: 600,
-    width: 1000,
-    icon: path.join(__dirname, '..', 'resources', 'icon.ico'),
-    webPreferences: {
-      zoomFactor: 1,
-      webSecurity: false,
-      nodeIntegration: true, // allow loading modules via the require () function
-      contextIsolation: false,
-      additionalArguments: [
-        '--user-data=' + app.getPath('userData'),
-        '--app-version=' + getAppVersion()
-      ],
-      devTools: !process.env.SPECTRON // disable on e2e test environment
-    }
-  })
-
-  // console.log('BrowserWindow created')
-  win.loadURL(process.env.NODE_ENV === 'development' ? process.env.DEV_SERVER_URL : 'app://./index.html')
-  // console.log('BrowserWindow loadURL called')
-
-  win.once('ready-to-show', () => {
-    // console.log('BrowserWindow ready to show')
-    win.maximize()
-
-    // console.log('winCreated notification for modules')
-    modules.forEach(m => m.winCreated(win))
-  })
-
-  win.on('close', async (event) => {
-    if (hasLocalGame && !isForceClosing) {
-      event.preventDefault()
-      isForceClosing = true
-
-      const choice = await showUnfinishedGameDialog()
-    
-      isForceClosing = false
-      if (choice === 0) {
-        hasLocalGame = false
-        win.destroy() // Force close the window
-      }
-    }
-  })
-  
-  win.on('closed', ev => {
-    // console.log("WIN CLOSED")
-    modules.forEach(m => m.winClosed(win))
-  })
-
-  return win
-}
-
 app.disableHardwareAcceleration()
 
 app.whenReady().then(() => {
-  // console.log('app is ready')
-  // protocol.registerFileProtocol('file', (request, callback) => {
-  //   const pathname = request.url.replace('file:///', '')
-  //   callback(pathname)
-  // })
+  ipcMain.handle('get-app-version', onGetAppVersion)
+  ipcMain.on('set-local-game', onSetLocalGame(state))
+  ipcMain.handle('open-load-game-dialog', onLoadGameDialog(dialogElectron, dialogLocks))
 
-  settings().then(settings => {
-    // console.log('creating modules')
-    modules.push(settingsWatch(settings))
-    modules.push(theme(settings))
-    modules.push(menu(settings))
-    modules.push(dialog(settings))
-    modules.push(winevents(settings))
-    modules.push(localServer(settings))
-    const appVersion = getAppVersion()
-    modules.push(updater(settings, appVersion))
-    modules.push(installer())
-    addonDefaults()
+  // Expose system helpers to renderer via the preload bridge. These run in
+  // the main process so they can safely use Node APIs like child_process/fs.
+  ipcMain.handle('check-java-version', async (_ev, executable = 'java') => {
+    return new Promise((resolve) => {
+      execFile(executable, ['-version'], (error, _stdout, stderr) => {
+        if (error) {
+          console.error(error)
+          resolve({ ok: false, error: 'not-found' })
+        } else {
+          const ident = (stderr || '').split('\n')[0]
+          let vendor = null
+          let version = null
 
-    if (process.env.NODE_ENV === 'production') {
-      modules.push(updater(settings))
+          let m = ident.match(/^([\w-]+) version "1\.(\d)\.[^"]*"/)
+          if (m) {
+            vendor = m[1]
+            version = parseInt(m[2])
+          } else {
+            m = ident.match(/^([\w-]+) version "(\d+)/)
+            if (m) {
+              vendor = m[1]
+              version = parseInt(m[2])
+            }
+          }
+
+          const outdated = !!version && version < 17
+          const value = {
+            version,
+            vendor,
+            ok: !outdated,
+            error: outdated ? 'outdated' : null
+          }
+          resolve(value)
+        }
+      })
+    })
+  })
+
+  ipcMain.handle('check-engine-version', async (_ev, { executable = 'java', args = [], enginePath } = {}) => {
+    try {
+      await fs.promises.access(enginePath, fs.constants.R_OK)
+    } catch (e) {
+      console.error(e)
+      return { ok: false, path: enginePath, error: 'not-found' }
     }
 
-    createWindow()
+    return new Promise((resolve) => {
+      execFile(executable, [...args, '--version'], (error, stdout, stderr) => {
+        if (error) {
+          console.error(error)
+          resolve({ ok: false, path: enginePath, error: 'exec-error', errorMessage: stderr || (error + '') })
+        } else {
+          const version = (stdout || '').trim()
+          resolve({ ok: true, path: enginePath, version })
+        }
+      })
+    })
+  })
+
+  // ─── fs handlers ──────────────────────────────────────────────────────────────
+  ipcMain.handle('fs.readFile', async (_ev, filePath, encoding = 'utf8') => {
+    try {
+      const data = await fs.promises.readFile(filePath, encoding)
+      // return strings or buffers (buffers will be serialized)
+      return data
+    } catch (e) {
+      console.error('fs.readFile failed', e)
+      throw e
+    }
+  })
+
+  ipcMain.handle('fs.readdir', async (_ev, folder) => {
+    try {
+      return await fs.promises.readdir(folder)
+    } catch (e) {
+      console.error('fs.readdir failed', e)
+      return []
+    }
+  })
+
+  ipcMain.handle('fs.access', async (_ev, filePath) => {
+    try {
+      await fs.promises.access(filePath, fs.constants.R_OK)
+      return true
+    } catch (e) {
+      return false
+    }
+  })
+
+  ipcMain.handle('fs.writeFile', async (_ev, filePath, data) => {
+    try {
+      await fs.promises.writeFile(filePath, data)
+      return true
+    } catch (e) {
+      console.error('fs.writeFile failed', e)
+      throw e
+    }
+  })
+
+  ipcMain.handle('fs.mkdir', async (_ev, folder, opts) => {
+    try {
+      await fs.promises.mkdir(folder, opts || { recursive: true })
+      return true
+    } catch (e) {
+      console.error('fs.mkdir failed', e)
+      throw e
+    }
+  })
+
+  ipcMain.handle('fs.unlink', async (_ev, filePath) => {
+    try {
+      await fs.promises.unlink(filePath)
+      return true
+    } catch (e) {
+      console.error('fs.unlink failed', e)
+      throw e
+    }
+  })
+
+  ipcMain.handle('fs.rename', async (_ev, a, b) => {
+    try {
+      await fs.promises.rename(a, b)
+      return true
+    } catch (e) {
+      console.error('fs.rename failed', e)
+      throw e
+    }
+  })
+
+  ipcMain.handle('fs.mkdtemp', async (_ev, prefix) => {
+    try {
+      return await fs.promises.mkdtemp(prefix)
+    } catch (e) {
+      console.error('fs.mkdtemp failed', e)
+      throw e
+    }
+  })
+
+  ipcMain.handle('fs.sha256', async (ev, filePath) => {
+    try {
+      const hash = crypto.createHash('sha256')
+      await new Promise((resolve, reject) => {
+        const rs = fs.createReadStream(filePath)
+        rs.on('error', reject)
+        rs.on('data', chunk => hash.update(chunk))
+        rs.on('end', resolve)
+      })
+      return hash.digest('hex')
+    } catch (e) {
+      console.error('fs.sha256 failed', e)
+      throw e
+    }
+  })
+
+  ipcMain.handle('unzip.extract', async (ev, zipPath, dest) => {
+    try {
+      await fs.promises.access(zipPath, fs.constants.R_OK)
+    } catch (e) {
+      console.error('unzip.extract: zip not accessible', e)
+      throw e
+    }
+    try {
+      await pipeline(fs.createReadStream(zipPath), unzipper.Extract({ path: dest }))
+      return true
+    } catch (e) {
+      console.error('unzip.extract failed', e)
+      throw e
+    }
+  })
+
+  ipcMain.handle('download.mega', async (_ev, link, downloadFileName) => {
+    try {
+      await fs.promises.unlink(downloadFileName).catch(() => {})
+      return await new Promise((resolve, reject) => {
+        try {
+          const megaFile = File.fromURL(link)
+          megaFile.loadAttributes().then(() => {
+            // proceed
+          }).catch(() => {})
+          megaFile
+            .download()
+            .pipe(fs.createWriteStream(downloadFileName))
+            .on('error', err => {
+              console.error('download.mega failed', err)
+              reject(err)
+            })
+            .on('finish', () => resolve(true))
+        } catch (e) {
+          console.error('download.mega failed', e)
+          reject(e)
+        }
+      })
+    } catch (e) {
+      console.error('download.mega top-level error', e)
+      throw e
+    }
+  })
+
+  settings().then(s => {
+    modules.push(settingsWatch(s))
+    modules.push(theme(s))
+    modules.push(menu(s))
+    modules.push(dialog(s))
+    modules.push(winevents(s))
+    modules.push(localServer(s))
+    const appVersion = onGetAppVersion()
+    modules.push(updater(s, appVersion))
+    modules.push(installer())
+    addonDefaults()
+    createWindow(app, modules, state, showUnfinishedGameDialog, onGetAppVersion)
   })
 })
 
 app.on('activate', () => {
-  // currently not used, because app us quit when main vindow is closed
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow()
-  }
+  if (BrowserWindow.getAllWindows().length === 0) createWindow(app, modules, state, showUnfinishedGameDialog, onGetAppVersion)
 })
 
-// Quit when all windows are closed.
-app.on('window-all-closed', function () {
-  console.log('window-all-closed emitted')
-
-  // Always quit the app when all windows are closed
-  if (process.platform === 'win32') {
-    // Force Electron shutdown (bypasses updater / installer hooks)
-    app.exit(0)
-  } else {
-    app.quit()
-  }
-})
+app.on('window-all-closed', onAllWindowsClosed(process.platform, app))
 
 app.on('before-quit', () => {
   autoUpdater.removeAllListeners()
-  // Clean up Discord RPC connection
 })
 
+// ─── Discord RPC ──────────────────────────────────────────────────────────────
 let discordClientId = null
 let discordRpc = null
 
-// Destroy Discord RPC
-function destroyRpc() {
-  if (discordRpc) {
-    try {
-      discordRpc.removeAllListeners()
-      discordRpc.destroy();
-    } catch {} 
-  }
-}
-
-// Init Discord RPC asynchronously
 async function initDiscordRpc() {
   if (!discordRpc) {
     if (process.env.NODE_ENV === 'production') {
@@ -212,86 +294,16 @@ async function initDiscordRpc() {
         console.warn('Failed to load Discord config:', e)
       }
     }
-
-    if (!discordClientId) {
-      console.warn('DISCORD_CLIENT_ID not set, Discord Rich Presence disabled')
-      return
-    }
-
+    if (!discordClientId) { console.warn('DISCORD_CLIENT_ID not set, Discord Rich Presence disabled'); return }
     try {
-      // Create the RPC client
       discordRpc = new RPC.Client({ transport: 'ipc' })
       RPC.register(discordClientId)
-
-      // Login to Discord
       discordRpc.login({ clientId: discordClientId }).catch(console.error)
-
-    // Once ready, set initial status
-      discordRpc.on('ready', () => {
-        console.log('Discord Rich Presence is active!')
-        setDiscordActivity({
-          details: 'FanCloisterZone',
-          state: 'Playing'
-        })
-      })
+      discordRpc.on('ready', () => { console.log('Discord Rich Presence active') })
     } catch (e) {
       console.error('Discord RPC initialization failed:', e)
     }
-  } else {
-    setDiscordActivity({
-      details: 'FanCloisterZone',
-      state: 'Playing'
-    })
   }
 }
 
-// Call the async function
 initDiscordRpc()
-
-/**
- * Helper function to set or update Discord Rich Presence
- * @param {Object} options - { details: string, state: string, largeImageKey?, largeImageText? }
- */
-export function setDiscordActivity({ details, state, largeImageKey = 'game_icon', largeImageText = 'FanCloisterZone' }) {
-  if (!discordRpc) return
-  try {
-    discordRpc.setActivity({
-      details,
-      state,
-      startTimestamp: new Date(),
-      largeImageKey,
-      largeImageText,
-      buttons: [{ label: 'Join Game', url: 'https://github.com/fancarpedia/FanCloisterZone/releases' }]
-    })
-  } catch (err) {
-    console.error('Failed to set Discord Rich Presence:', err)
-  }
-}
-
-powerMonitor.on('lock-screen', () => {
-  try {
-    discordRpc.clearActivity().catch(console.error)
-  } catch {}
-})
-
-powerMonitor.on('unlock-screen', () => {
-  try {
-    initDiscordRpc()
-  } catch (e){}
-})
-
-powerMonitor.on('suspend', () => {
-  console.log('System is going to sleep mode/hibernation');
-
-  try {
-    discordRpc.clearActivity().catch(console.error)
-  } catch (e){}
-})
-
-powerMonitor.on('resume', () => {
-  console.log('System is going to resume');
-
-  try {
-    initDiscordRpc()
-  } catch (e){}
-})

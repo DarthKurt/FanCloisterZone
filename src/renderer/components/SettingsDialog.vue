@@ -1,107 +1,71 @@
 <template>
-  <v-card class="d-flex flex-column">
-    <v-card-title class="headline">{{ $t('settings.title') }}</v-card-title>
-    <v-card-text class="flex-grow-1">
-      <div class="d-flex">
-        <v-list class="flex-shrink-0">
-          <v-list-item-group v-model="section" mandatory>
-            <v-list-item>
-              <v-list-item-title>{{ $t('settings.player.title') }}</v-list-item-title>
-            </v-list-item>
-            <v-list-item>
-              <v-list-item-title>{{ $t('settings.game-interface.title') }}</v-list-item-title>
-            </v-list-item>
-            <v-list-item>
-              <v-list-item-title>{{ $t('settings.appearance.title') }}</v-list-item-title>
-            </v-list-item>
-            <v-list-item>
-              <v-list-item-title>{{ $t('settings.add-ons.title') }}</v-list-item-title>
-            </v-list-item>
-            <v-list-item>
-              <v-list-item-title>{{ $t('settings.java.title') }}</v-list-item-title>
-            </v-list-item>
-            <v-list-item>
-              <v-list-item-title>{{ $t('settings.system.title') }}</v-list-item-title>
-            </v-list-item>
-          </v-list-item-group>
-        </v-list>
-
-        <div class="px-8 flex-grow-1 settings-dialog-content">
-          <PlayerSettings v-if="section === 0" />
-          <GameInterfaceSettings v-else-if="section === 1" />
-          <ApperanceSettings v-else-if="section === 2" />
-          <AddonsSettings v-else-if="section === 3" />
-          <JavaSettings v-else-if="section === 4" ref="javaSettings" />
-          <SystemSettings v-else-if="section === 5" ref="systemSettings" />
-        </div>
+  <v-card>
+    <v-card-title>{{ t('settings.title') }}</v-card-title>
+    <v-card-text class="settings-grid">
+      <div>
+        <div class="label">{{ t('about.configuration-file') }}</div>
+        <div class="value linkish" @click="openConfig">{{ settings.file }}</div>
       </div>
+      <div>
+        <div class="label">Theme</div>
+        <div class="value">{{ settings.theme }}</div>
+      </div>
+      <div>
+        <div class="label">Locale</div>
+        <div class="value">{{ settings.locale }}</div>
+      </div>
+      <div>
+        <div class="label">Java Path</div>
+        <div class="value">{{ settings.javaPath || 'java' }}</div>
+      </div>
+      <div>
+        <div class="label">Engine Path</div>
+        <div class="value">{{ settings.enginePath || 'Engine.jar' }}</div>
+      </div>
+      <v-alert type="info" variant="tonal">
+        The full legacy settings UI is still being migrated. This dialog keeps the route and menu flow working during Phase 5.
+      </v-alert>
     </v-card-text>
-    <v-card-actions>
-      <v-spacer />
-      <v-btn text @click="$emit('close')">{{ $t('button.close') }}</v-btn>
+    <v-card-actions class="justify-end">
+      <v-btn variant="text" @click="$emit('close')">{{ t('button.close') }}</v-btn>
     </v-card-actions>
   </v-card>
 </template>
 
-<script>
-import AddonsSettings from '@/components/settings/AddonsSettings'
-import ApperanceSettings from '@/components/settings/ApperanceSettings'
-import GameInterfaceSettings from '@/components/settings/GameInterfaceSettings'
-import JavaSettings from '@/components/settings/JavaSettings'
-import PlayerSettings from '@/components/settings/PlayerSettings'
-import SystemSettings from '@/components/settings/SystemSettings'
+<script setup>
+import { computed } from 'vue'
 
-export default {
-  components: {
-    AddonsSettings,
-    ApperanceSettings,
-    GameInterfaceSettings,
-    JavaSettings,
-    PlayerSettings,
-    SystemSettings
-  },
+defineEmits(['close'])
 
-  data () {
-    return {
-      section: 0
-    }
-  },
+const { $store } = useNuxtApp()
+const { t } = useI18n()
 
-  methods: {
-    clean () {
-      this.$refs.javaSettings?.clean()
-    }
+const settings = computed(() => $store.state.settings)
+
+function openConfig () {
+  if (settings.value.file) {
+    window.electronAPI.shell.openPath(settings.value.file)
   }
 }
-
 </script>
 
-<style lang="sass">
-.settings-dialog-content
-  .v-list
-    width: 160px
+<style scoped>
+.settings-grid {
+  display: grid;
+  gap: 1rem;
+}
 
-  h3
-    font-weight: 300
-    font-size: 16px
-    text-transform: uppercase
-    text-align: center
+.label {
+  font-weight: 600;
+}
 
-    +theme using ($theme)
-      color: map-get($theme, 'gray-text-color')
+.value {
+  margin-top: 0.2rem;
+  word-break: break-word;
+}
 
-  h4
-    font-size: 1rem
-    font-weight: 600
-    margin-top: 20px
-
-  em
-    display: block
-    margin-bottom: 2px
-
-  .checkboxes-wrapper .v-input, .v-input--radio-group
-    margin-top: 0
-
-  .v-radio
-    margin-bottom: 4px !important
+.linkish {
+  cursor: pointer;
+  text-decoration: underline;
+}
 </style>

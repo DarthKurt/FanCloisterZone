@@ -1,4 +1,3 @@
-
 export function connectExceptionToMessage (e) {
   if (e.error?.code === 'EAI_AGAIN') {
     return "Can't resolve host"

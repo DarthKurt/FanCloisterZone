@@ -1,8 +1,52 @@
-import path from 'path'
-import crypto from 'crypto'
-import { spawn } from 'child_process'
+import path from '@/utils/path-shim'
+
+// compute SHA-1 hex using Web Crypto when available; fallback to a small
+// pure-JS SHA-1 implementation to avoid requiring Node's `crypto` in renderer.
+async function computeSha1Hex (str) {
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
+    const enc = new TextEncoder()
+    const buf = await window.crypto.subtle.digest('SHA-1', enc.encode(str))
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
+  }
+
+  // Pure JS SHA-1 fallback
+  function rotl (n, s) { return (n << s) | (n >>> (32 - s)) }
+  function sha1 (msg) {
+    const msgUtf8 = unescape(encodeURIComponent(msg))
+    const words = []
+    for (let i = 0; i < msgUtf8.length; i++) {
+      words[i >> 2] |= (msgUtf8.charCodeAt(i) & 0xff) << (24 - (i % 4) * 8)
+    }
+    const l = msgUtf8.length * 8
+    words[l >> 5] |= 0x80 << (24 - (l % 32))
+    words[(((l + 64) >> 9) << 4) + 15] = l
+    let H0 = 0x67452301, H1 = 0xEFCDAB89, H2 = 0x98BADCFE, H3 = 0x10325476, H4 = 0xC3D2E1F0
+    for (let i = 0; i < words.length; i += 16) {
+      let a = H0, b = H1, c = H2, d = H3, e = H4
+      for (let t = 0; t < 80; t++) {
+        let w = (t < 16) ? (words[i + t] | 0) : rotl(words[i + t - 3] ^ words[i + t - 8] ^ words[i + t - 14] ^ words[i + t - 16], 1)
+        words[i + t] = w
+        const s = Math.floor(t / 20)
+        const K = [0x5A827999, 0x6ED9EBA1, 0x8F1BBCDC, 0xCA62C1D6][s]
+        const F = s === 0 ? (b & c) | (~b & d) : s === 1 ? b ^ c ^ d : s === 2 ? (b & c) | (b & d) | (c & d) : b ^ c ^ d
+        const temp = (rotl(a, 5) + F + e + K + (w >>> 0)) >>> 0
+        e = d; d = c; c = rotl(b, 30) >>> 0; b = a; a = temp
+      }
+      H0 = (H0 + a) >>> 0
+      H1 = (H1 + b) >>> 0
+      H2 = (H2 + c) >>> 0
+      H3 = (H3 + d) >>> 0
+      H4 = (H4 + e) >>> 0
+    }
+    return [H0, H1, H2, H3, H4].map(h => ('00000000' + (h >>> 0).toString(16)).slice(-8)).join('')
+  }
+
+  return sha1(str)
+}
+
+// child_process is required at runtime only. Use dynamic require inside
+// `spawn()` to avoid Vite externalizing the module into the browser bundle.
 import debounce from 'lodash/debounce'
-import Vue from 'vue'
 
 class BaseEngine {
   async enableBulkMode () {
@@ -89,15 +133,23 @@ class Engine extends BaseEngine {
 
       try {
         const response = JSON.parse(data)
-        const hash = crypto.createHash('sha1').update(data).digest('hex')
-        if (loggingEnabled) {
-          console.debug(response)
-        }
-        if (this.onMessage) {
-          const { resolve } = this.onMessage
-          this.onMessage = null
-          resolve({ response, hash })
-        }
+        computeSha1Hex(data).then(hash => {
+          if (loggingEnabled) {
+            console.debug(response)
+          }
+          if (this.onMessage) {
+            const { resolve } = this.onMessage
+            this.onMessage = null
+            resolve({ response, hash })
+          }
+        }).catch(err => {
+          console.error('Hashing error', err)
+          if (this.onMessage) {
+            const { reject } = this.onMessage
+            this.onMessage = null
+            reject(err)
+          }
+        })
       } catch (e) {
         console.error('Received invalid json: ' + data)
         console.error(e)
@@ -163,15 +215,23 @@ class SocketEngine extends BaseEngine {
 
       try {
         const response = JSON.parse(data)
-        const hash = crypto.createHash('sha1').update(data).digest('hex')
-        if (loggingEnabled) {
-          console.debug(response)
-        }
-        if (this.onMessage) {
-          const { resolve } = this.onMessage
-          this.onMessage = null
-          resolve({ response, hash })
-        }
+        computeSha1Hex(data).then(hash => {
+          if (loggingEnabled) {
+            console.debug(response)
+          }
+          if (this.onMessage) {
+            const { resolve } = this.onMessage
+            this.onMessage = null
+            resolve({ response, hash })
+          }
+        }).catch(err => {
+          console.error('Hashing error', err)
+          if (this.onMessage) {
+            const { reject } = this.onMessage
+            this.onMessage = null
+            reject(err)
+          }
+        })
       } catch (e) {
         console.error('Received invalid json: ' + data)
         console.error(e)
@@ -204,20 +264,27 @@ class SocketEngine extends BaseEngine {
   }
 }
 
-export default ({ app }, inject) => {
+export default defineNuxtPlugin((nuxtApp) => {
   let spawnedEngine = null
 
-  const appPath = window.process.argv.find(arg => arg.startsWith('--app-path=')).replace('--app-path=', '')
+  // --app-path is passed via additionalArguments by the main process.
+  // Use process.argv directly (nodeIntegration: true); fall back to the
+  // electronAPI resourcesPath so the app still starts if the arg is absent.
+  const argv = (typeof process !== 'undefined' && process.argv) || []
+  const appPathArg = argv.find(arg => arg.startsWith('--app-path='))
+  const appPath = appPathArg
+    ? appPathArg.replace('--app-path=', '')
+    : (window.electronAPI?.resourcesPath ?? '')
   const basePath = path.dirname(appPath)
 
-  Vue.prototype.$engine = {
+  const engine = {
     getJavaExecutable () {
-      const { settings } = app.store.state
+      const { settings } = nuxtApp.$store.state
       return settings.javaPath || 'java'
     },
 
     getJavaArgs () {
-      const { settings } = app.store.state
+      const { settings } = nuxtApp.$store.state
       if (settings.enginePath) {
         return ['-jar', settings.enginePath]
       }
@@ -230,7 +297,7 @@ export default ({ app }, inject) => {
     },
 
     isRemote () {
-      const { settings } = app.store.state
+      const { settings } = nuxtApp.$store.state
       const m = /^([.\w]+):(\d+)$/.exec(settings.enginePath)
       if (m) {
         return { port: parseInt(m[2]), host: m[1] }
@@ -239,14 +306,16 @@ export default ({ app }, inject) => {
     },
 
     spawn ({ loggingEnabled }) {
-      const remote = this.isRemote()
-      if (remote) {
-        const s = require('net').Socket()
-        s.connect(remote.port, remote.host)
-        spawnedEngine = new SocketEngine(s, loggingEnabled)
-      } else {
-        spawnedEngine = new Engine(spawn(this.getJavaExecutable(), this.getJavaArgs()), loggingEnabled)
-      }
+        const remote = this.isRemote()
+        // Spawning or connecting to local/remote engine requires Node APIs
+        // (net/child_process). Those operations must run in the main process.
+        // For now, do not attempt to spawn from the renderer; return null.
+        if (remote) {
+          console.warn('Remote engine connections are not supported from the renderer in this build')
+          return null
+        }
+        console.warn('Local engine spawn is not supported from the renderer; spawn in main instead')
+        return null
       spawnedEngine.on('exit', () => {
         spawnedEngine = null
       })
@@ -264,4 +333,6 @@ export default ({ app }, inject) => {
       return spawnedEngine
     }
   }
-}
+
+  return { provide: { engine } }
+})

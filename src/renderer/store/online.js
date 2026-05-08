@@ -1,4 +1,3 @@
-
 export const state = () => ({
   alertMessage: null,
   gameList: [],
@@ -6,21 +5,15 @@ export const state = () => ({
 })
 
 export const mutations = {
-  alertMessage (state, value) {
-    state.alertMessage = value
-  },
-  gameList (state, value) {
-    state.gameList = value
-  },
-  gamePublicList (state, value) {
-    state.gamePublicList = value
-  }
+  alertMessage (state, value) { state.alertMessage = value },
+  gameList (state, value) { state.gameList = value },
+  gamePublicList (state, value) { state.gamePublicList = value }
 }
 
 export const actions = {
   onClose ({ commit }) {
-    commit('alertMessage', null),
-    commit('gameList', []),
+    commit('alertMessage', null)
+    commit('gameList', [])
     commit('gamePublicList', [])
   }
 

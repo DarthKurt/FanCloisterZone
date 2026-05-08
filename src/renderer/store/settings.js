@@ -1,8 +1,6 @@
-import os from 'os'
-import fs from 'fs'
-import Vue from 'vue'
+import os from '@/utils/os-shim'
+import fs from '@/utils/fs-shim'
 import isEqual from 'lodash/isEqual'
-import { ipcRenderer } from 'electron'
 
 import { randomId } from '@/utils/random'
 import { CONSOLE_SETTINGS_COLOR } from '@/constants/logging'
@@ -19,11 +17,9 @@ export const state = () => ({
   enabledArtworks: ['classic/classic'],
   lastGameSetup: null,
   mySetups: [],
-  // deprecated
   recentSaves: [],
   recentSetupSaves: [],
   recentJoinedGames: [],
-  // ---
   showValidRulesOnly: false,
   clientId: null,
   secret: null,
@@ -36,11 +32,11 @@ export const state = () => ({
   beep: true,
   activePlayerIndicatorBgColor: true,
   activePlayerIndicatorTriangle: true,
-  playerListRotate: 'none', // none | active-on-top | local-on-top
+  playerListRotate: 'none',
   theme: 'light',
   locale: null,
-  enginePath: null, // explicit engine path
-  javaPath: null, // exolicit java path
+  enginePath: null,
+  javaPath: null,
   playOnlineUrl: 'play.jcloisterzone.com/ws',
   playOnlineFanURL: 'fancarpedia.snazzybee.com:37447',
   devMode: process.env.NODE_ENV === 'development',
@@ -58,37 +54,17 @@ export const mutations = {
   settings (state, { settings, source }) {
     const changed = []
     Object.keys(settings).forEach(key => {
-      if (JSON.stringify(state[key]) !== JSON.stringify(settings[key])) {
-        changed.push(key)
-      }
-      Vue.set(state, key, settings[key])
+      if (JSON.stringify(state[key]) !== JSON.stringify(settings[key])) changed.push(key)
+      state[key] = settings[key]
     })
-
-    changed.forEach(key => {
-      const cb = changeCallbacks[key]
-      if (cb) cb(settings[key], source)
-    })
+    changed.forEach(key => { const cb = changeCallbacks[key]; if (cb) cb(settings[key], source) })
   },
 
-  clientId (state, value) {
-    state.clientId = value
-  },
-
-  recentJoinedGames (state, value) {
-    state.recentJoinedGames = value
-  },
-
-  recentSaves (state, value) {
-    state.recentSaves = value
-  },
-
-  recentSetupSaves (state, value) {
-    state.recentSetupSaves = value
-  },
-
-  mySetups (state, value) {
-    state.mySetups = value
-  }
+  clientId (state, value) { state.clientId = value },
+  recentJoinedGames (state, value) { state.recentJoinedGames = value },
+  recentSaves (state, value) { state.recentSaves = value },
+  recentSetupSaves (state, value) { state.recentSetupSaves = value },
+  mySetups (state, value) { state.mySetups = value }
 }
 
 export const getters = {
@@ -108,38 +84,19 @@ export const actions = {
     let missingKey = false
     if (settings) {
       settings = { ...settings, file }
-      if (!settings.clientId) {
-        missingKey = true
-        settings.clientId = randomId()
-      }
-      if (!settings.secret) {
-        missingKey = true
-        settings.secret = randomId()
-      }
-      if (!settings.nickname) {
-        missingKey = true
-        settings.nickname = os.userInfo().username
-      }
-      // migrate legacy play online settings
+      if (!settings.clientId) { missingKey = true; settings.clientId = randomId() }
+      if (!settings.secret) { missingKey = true; settings.secret = randomId() }
+      if (!settings.nickname) { missingKey = true; settings.nickname = os.userInfo().username }
       if (settings.playOnlineUrl === null || settings.playOnlineUrl === 'play.jcloisterzone.com/ws') {
-        missingKey = true
-        settings.playOnlineUrl = 'play-online.jcloisterzone.com/ws'
+        missingKey = true; settings.playOnlineUrl = 'play-online.jcloisterzone.com/ws'
       }
-      // Add Fan server
       if (settings.playOnlineFanURL === null) {
-        missingKey = true
-        settings.playOnlineFanURL = 'fancarpedia.snazzybee.com:37447'
+        missingKey = true; settings.playOnlineFanURL = 'fancarpedia.snazzybee.com:37447'
       }
-      // migrate 5.6
       if (settings.enabledArtworks.length > 0 && settings.enabledArtworks[0] === 'classic') {
-        missingKey = true
-        settings.enabledArtworks = ['classic/classic']
+        missingKey = true; settings.enabledArtworks = ['classic/classic']
       }
-      // locale
-      if (!settings.locale) {
-        missingKey = true
-        settings.locale = getSupportedLanguage(systemLocale)
-      }
+      if (!settings.locale) { missingKey = true; settings.locale = getSupportedLanguage(systemLocale) }
       commit('settings', { settings, source: 'load' })
       console.log(`%c settings %c loaded ${file}`, CONSOLE_SETTINGS_COLOR, '')
     } else {
@@ -156,9 +113,7 @@ export const actions = {
       })
       console.log(`%c settings %c file ${file} doesn't exist. Creating default one.`, CONSOLE_SETTINGS_COLOR, '')
     }
-    if (missingKey) {
-      dispatch('save')
-    }
+    if (missingKey) dispatch('save')
     await dispatch('validateRecentSaves')
     commit('settingsLoaded', true, { root: true })
   },
@@ -167,22 +122,19 @@ export const actions = {
     try {
       const data = { ...state }
       delete data.file
-      if (data.devMode !== process.env.NODE_ENV === 'development') {
-        delete data.devMode
-      }
-      data.clientId = data.clientId.split('--')[0] // for dev mode, do not store changed id
-      await ipcRenderer.invoke('settings.save', data)
+      if (data.devMode !== (process.env.NODE_ENV === 'development')) delete data.devMode
+      data.clientId = data.clientId.split('--')[0]
+      await window.electronAPI.invoke('settings.save', data)
       console.log(`%c settings %c saved to ${state.file}`, CONSOLE_SETTINGS_COLOR, '')
     } catch (e) {
       console.error(e)
-      // do nothong, settings doesnt exist
     }
   },
 
   async addRecentSave ({ state, commit, dispatch }, { file, setup }) {
     const bareSetup = { ...setup }
     delete bareSetup.options
-    const recentSaves = state.recentSaves.filter(f => f !== file) // if file is contained, it will be only reordered to begining
+    const recentSaves = state.recentSaves.filter(f => f !== file)
     recentSaves.unshift(file)
     recentSaves.splice(RECENT_SAVED_GAME_COUNT, recentSaves.length)
     commit('recentSaves', recentSaves)
@@ -192,7 +144,7 @@ export const actions = {
   async addRecentSetupSave ({ state, commit, dispatch }, { file, setup }) {
     const bareSetup = { ...setup }
     delete bareSetup.options
-    const recentSaves = state.recentSetupSaves.filter(f => f !== file) // if file is contained, it will be only reordered to begining
+    const recentSaves = state.recentSetupSaves.filter(f => f !== file)
     recentSaves.unshift(file)
     recentSaves.splice(RECENT_SETUP_FILE_COUNT, recentSaves.length)
     commit('recentSetupSaves', recentSaves)
@@ -225,9 +177,7 @@ export const actions = {
         containsInvalid = true
       }
     }
-    if (containsInvalid) {
-      commit('recentSaves', state.recentSaves.filter(f => !invalid[f]))
-    }
+    if (containsInvalid) commit('recentSaves', state.recentSaves.filter(f => !invalid[f]))
   },
 
   async validateRecentSetupSaves ({ state, commit }) {
@@ -241,9 +191,7 @@ export const actions = {
         containsInvalid = true
       }
     }
-    if (containsInvalid) {
-      commit('recentSetupSaves', state.recentSetupSaves.filter(f => !invalid[f]))
-    }
+    if (containsInvalid) commit('recentSetupSaves', state.recentSetupSaves.filter(f => !invalid[f]))
   },
 
   async addMySetup ({ state, commit, dispatch }, setup) {

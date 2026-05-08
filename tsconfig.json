@@ -19,7 +19,7 @@
     "src/main/**/*.js",
     "src/renderer/store/**/*.js",
     "src/renderer/plugins/**/*.js",
-    "src/renderer/types/**/*.d.ts"
+    "src/renderer/types/**/*.d.ts",
   ],
   "exclude": [
     "node_modules",

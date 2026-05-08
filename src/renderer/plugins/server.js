@@ -1,22 +1,19 @@
-import Vue from 'vue'
-import { ipcRenderer } from 'electron'
-
 import { getAppVersion } from '@/utils/version'
 import { randomId } from '@/utils/random'
 
-export default ({ app }, inject) => {
+export default defineNuxtPlugin((nuxtApp) => {
   let running = false
 
-  Vue.prototype.$server = {
+  const server = {
     async start (game) {
-      const { settings } = app.store.state
+      const { settings } = nuxtApp.$store.state
       const appVersion = getAppVersion()
-      const engineVersion = app.store.state.engine.version
+      const engineVersion = nuxtApp.$store.state.engine.version
       if (!game.gameId) {
         game = { gameId: randomId(), ...game }
       }
 
-      await ipcRenderer.invoke('localserver.start', {
+      await window.electronAPI.invoke('localserver.start', {
         game,
         port: settings.port,
         clientId: settings.clientId,
@@ -28,7 +25,7 @@ export default ({ app }, inject) => {
 
     async stop () {
       running = false
-      await ipcRenderer.invoke('localserver.stop')
+      await window.electronAPI.invoke('localserver.stop')
     },
 
     isRunning () {
@@ -36,7 +33,9 @@ export default ({ app }, inject) => {
     },
 
     async dump () {
-      return await ipcRenderer.invoke('localserver.dump')
+      return await window.electronAPI.invoke('localserver.dump')
     }
   }
-}
+
+  return { provide: { server } }
+})

@@ -1,4 +1,3 @@
-import Vue from 'vue'
 import isString from 'lodash/isString'
 import sortBy from 'lodash/sortBy'
 
@@ -45,7 +44,7 @@ class Theme extends EventsBase {
   }
 
   async loadArtworks () {
-    const { settings } = this.ctx.store.state
+    const { settings } = this.ctx.$store.state
 
     let resourcesContainer = document.getElementById('theme-resources')
     if (resourcesContainer) {
@@ -74,7 +73,7 @@ class Theme extends EventsBase {
     this.artworks = loaded.artworks
     this.tiles = loaded.tiles
     this.tileLayers = {}
-    this.ctx.app.store.commit('artworksLoaded')
+    this.ctx.$store.commit('artworksLoaded')
     this.emit('load')
   }
 
@@ -332,18 +331,7 @@ class Theme extends EventsBase {
   }
 }
 
-export default (ctx, inject) => {
-  let instance = null
-
-  const prop = {
-    get () {
-      if (instance === null) {
-        instance = new Theme(ctx)
-      }
-      return instance
-    }
-  }
-  
-  Object.defineProperty(Vue.prototype, '$theme', prop)
-  Object.defineProperty(ctx, '$theme', prop)
-}
+export default defineNuxtPlugin((nuxtApp) => {
+  const theme = new Theme(nuxtApp)
+  return { provide: { theme } }
+})

@@ -1,4 +1,3 @@
-import Vue from 'vue'
 import uniq from 'lodash/uniq'
 import mapKeys from 'lodash/mapKeys'
 
@@ -14,19 +13,13 @@ const DEFAULT_SETS = {
 function getModifiedDefaults (before, after) {
   const keys = uniq([...Object.keys(before), ...Object.keys(after)])
   const diff = {}
-  keys.forEach(cid => {
-    if (before[cid] !== after[cid]) {
-      diff[cid] = after[cid]
-    }
-  })
+  keys.forEach(cid => { if (before[cid] !== after[cid]) diff[cid] = after[cid] })
   return diff
 }
 
 function getEmptySlots () {
   const slots = []
-  for (let i = 0; i < 9; i++) {
-    slots.push({ number: i, clientId: null, sessionId: null, name: null })
-  }
+  for (let i = 0; i < 9; i++) slots.push({ number: i, clientId: null, sessionId: null, name: null })
   return slots
 }
 
@@ -37,9 +30,8 @@ export const state = () => ({
   rules: null,
   start: null,
   timer: null,
-  gameAnnotations: {},
   ai: false,
-  editingGameId: null
+  gameAnnotations: {}
 })
 
 export const mutations = {
@@ -53,17 +45,10 @@ export const mutations = {
     state.timer = null
     state.gameAnnotations = {}
     state.ai = false
-    state.editingGameId = null
-  },
-  
-  setAI (state) {
-    state.ai = true
   },
 
-  setEditingGameId (state, id) {
-    state.editingGameId = id
-  },
-  
+  setAI (state) { state.ai = true },
+
   setup (state, setup) {
     state.sets = setup.sets
     state.excludedSets = setup.excludedSets
@@ -72,59 +57,33 @@ export const mutations = {
     state.start = setup.start
     state.timer = setup.timer
     state.gameAnnotations = {}
-    state.ai = setup.ai
   },
 
-  gameAnnotations (state, gameAnnotations) {
-    state.gameAnnotations = gameAnnotations
-  },
+  gameAnnotations (state, gameAnnotations) { state.gameAnnotations = gameAnnotations },
 
   tileSetQuantity (state, { id, quantity }) {
-    if (isConfigValueEnabled(quantity)) {
-      Vue.set(state.sets, id, quantity)
-    } else {
-      Vue.delete(state.sets, id)
-    }
+    if (isConfigValueEnabled(quantity)) state.sets[id] = quantity
+    else delete state.sets[id]
   },
 
   tileSetExcludedQuantity (state, { id, quantity }) {
-    if (isConfigValueEnabled(quantity)) {
-      Vue.set(state.excludedSets, id, quantity)
-    } else {
-      Vue.delete(state.excludedSets, id)
-    }
+    if (isConfigValueEnabled(quantity)) state.excludedSets[id] = quantity
+    else delete state.excludedSets[id]
   },
 
   elementConfig (state, { id, config }) {
-    if (isConfigValueEnabled(config)) {
-      Vue.set(state.elements, id, config)
-    } else {
-      Vue.delete(state.elements, id)
-    }
+    if (isConfigValueEnabled(config)) state.elements[id] = config
+    else delete state.elements[id]
   },
 
-  ruleConfig (state, { id, config }) {
-    state.rules[id] = config
-  },
-
-  timer (state, value) {
-    state.timer = value
-  },
-
-  startingTiles (state, id) {
-    state.start = id
-  }
+  ruleConfig (state, { id, config }) { state.rules[id] = config },
+  timer (state, value) { state.timer = value },
+  startingTiles (state, id) { state.start = id }
 }
 
 export const actions = {
-  newGame ({ commit }) {
-    commit('clear')
-  },
-
-  newGameAI ({ commit }) {
-    commit('clear')
-    commit('setAI')
-  },
+  newGame ({ commit }) { commit('clear') },
+  newGameAI ({ commit }) { commit('clear'); commit('setAI') },
 
   load ({ commit }, setup) {
     const { $tiles } = this._vm
@@ -136,13 +95,10 @@ export const actions = {
       const expansion = Expansion[expId]
       for (const release of expansion.releases) {
         release.sets.forEach(id => {
-          if ($tiles.isTileSetExcluded(id, expansions, edition)) {
-            excludedSets[id] = quantity
-          }
+          if ($tiles.isTileSetExcluded(id, expansions, edition)) excludedSets[id] = quantity
         })
       }
     })
-
     commit('setup', {
       ...setup,
       rules: { ...getDefaultRules(), ...setup.rules },
@@ -156,11 +112,8 @@ export const actions = {
     const enabledStateChanged = (!!release.sets.find(id => !!state.sets[id])) !== (quantity > 0)
     const before = enabledStateChanged ? $tiles.getDefaultElements(state.sets) : null
     release.sets.forEach(id => {
-      if (state.excludedSets[id]) {
-        commit('tileSetExcludedQuantity', { id, quantity })
-      } else {
-        commit('tileSetQuantity', { id, quantity })
-      }
+      if (state.excludedSets[id]) commit('tileSetExcludedQuantity', { id, quantity })
+      else commit('tileSetQuantity', { id, quantity })
     })
     const edition = getters.getSelectedEdition
     const expansions = $tiles.getExpansions(state.sets, edition)
@@ -175,8 +128,6 @@ export const actions = {
         commit('tileSetExcludedQuantity', { id, quantity: 0 })
       }
     })
-
-    // and reeable no longer excluded sets
     Object.entries(verifyExcluded).forEach(([id, quantity]) => {
       if (!$tiles.isTileSetExcluded(id, expansions, edition)) {
         commit('tileSetQuantity', { id, quantity })
@@ -184,19 +135,12 @@ export const actions = {
       }
     })
     const after = enabledStateChanged ? $tiles.getDefaultElements(state.sets) : null
-
     if (enabledStateChanged) {
       const diff = getModifiedDefaults(before, after)
-      Object.entries(diff).forEach(([id, config]) => {
-        // use commit, not dispatch - bound meeples (eg mage/witch) are already reflected in rules
-        commit('elementConfig', { id, config })
-      })
-
+      Object.entries(diff).forEach(([id, config]) => { commit('elementConfig', { id, config }) })
       GameElement.all().forEach(ge => {
         if (ge.id in state.elements) {
-          if (!$tiles.isElementEnabled(ge, state.sets, state.elements)) {
-            commit('elementConfig', { id: ge.id, config: false })
-          }
+          if (!$tiles.isElementEnabled(ge, state.sets, state.elements)) commit('elementConfig', { id: ge.id, config: false })
         }
       })
     }
@@ -204,70 +148,36 @@ export const actions = {
 
   setElementConfig ({ commit, state }, { id, config }) {
     commit('elementConfig', { id, config })
-    
-    const linkedPairs = {
-      mage: 'witch',
-      witch: 'mage'
-    }
-
+    const linkedPairs = { mage: 'witch', witch: 'mage' }
     if (id in linkedPairs) {
       commit('elementConfig', { id: linkedPairs[id], config })
     } else if (id === 'abbot') {
       commit('elementConfig', { id: 'garden', config: config > 0 })
     } else if (id === 'garden') {
-      if (config && !(state.elements.abbot > 0)) {
-        commit('elementConfig', { id: 'abbot', config: 1 })
-      }
+      if (config && !(state.elements.abbot > 0)) commit('elementConfig', { id: 'abbot', config: 1 })
     } else if (id === 'tower') {
-      if (!config && (state.elements['black-tower'] > 0)) {
-        commit('elementConfig', { id: 'black-tower', config: 0 })
-      }
+      if (!config && (state.elements['black-tower'] > 0)) commit('elementConfig', { id: 'black-tower', config: 0 })
     } else if (id === 'black-tower') {
-      if (config && !(state.elements.tower > 0)) {
-        commit('elementConfig', { id: 'tower', config: 1 })
-      }
+      if (config && !(state.elements.tower > 0)) commit('elementConfig', { id: 'tower', config: 1 })
     }
   },
 
-  setRuleConfig ({ commit }, { id, config }) {
-    commit('ruleConfig', { id, config })
-  },
+  setRuleConfig ({ commit }, { id, config }) { commit('ruleConfig', { id, config }) },
 
   takeSlot ({ rootState }, { number, name }) {
-    this._vm.$connection.send({
-      type: 'TAKE_SLOT',
-      payload: { gameId: rootState.game.id, number, name }
-    })
+    this._vm.$connection.send({ type: 'TAKE_SLOT', payload: { gameId: rootState.game.id, number, name } })
   },
 
   changeSlotToAi ({ rootState }, { number }) {
-    this._vm.$connection.send({
-      type: 'CHANGE_SLOT_TO_AI',
-      payload: { gameId: rootState.game.id, number }
-    })
+    this._vm.$connection.send({ type: 'CHANGE_SLOT_TO_AI', payload: { gameId: rootState.game.id, number } })
   },
 
   renameSlot ({ rootState }, { number, name }) {
-    this._vm.$connection.send({
-      type: 'UPDATE_SLOT',
-      payload: { gameId: rootState.game.id, number, name }
-    })
+    this._vm.$connection.send({ type: 'UPDATE_SLOT', payload: { gameId: rootState.game.id, number, name } })
   },
 
   releaseSlot ({ rootState }, { number }) {
-    this._vm.$connection.send({
-      type: 'LEAVE_SLOT',
-      payload: { gameId: rootState.game.id, number }
-    })
-  },
-  
-  async changeGameSetup ({ state, commit, rootState, dispatch }) {
-    const existingSetup = rootState.game.setup
-    const existingGameId = rootState.game.id
-
-    commit('setEditingGameId', existingGameId)
-    await dispatch('load', existingSetup)
-    this.$router.push('/game-setup')
+    this._vm.$connection.send({ type: 'LEAVE_SLOT', payload: { gameId: rootState.game.id, number } })
   },
 
   async createGame ({ state, commit, getters, dispatch }, { loadedSetup, slots } = {}) {
@@ -275,10 +185,7 @@ export const actions = {
     let setup
 
     if (loadedSetup) {
-      setup = {
-        options: {},
-        ...loadedSetup
-      }
+      setup = { options: {}, ...loadedSetup }
     } else {
       const edition = getters.getSelectedEdition
       const sets = mapKeys(state.sets, (value, key) => {
@@ -287,9 +194,7 @@ export const actions = {
       const addons = {}
       Object.keys($tiles.getExpansions(sets, edition)).forEach(id => {
         const { addon } = Expansion[id]
-        if (addon) {
-          addons[addon.id] = addon.json.version
-        }
+        if (addon) addons[addon.id] = addon.json.version
       })
 
       setup = {
@@ -302,9 +207,7 @@ export const actions = {
         options: {}
       }
 
-      if (Object.keys(addons).length) {
-        setup.addons = addons
-      }
+      if (Object.keys(addons).length) setup.addons = addons
     }
 
     const rules = {}
@@ -316,22 +219,8 @@ export const actions = {
     })
     setup.rules = rules
 
-    if (state.editingGameId) {
-      // Update existing game instead of creating a new one
-      this._vm.$connection.send({
-        type: 'UPDATE_GAME_SETUP',
-        payload: { gameId: state.editingGameId, setup }
-      })
-      commit('setEditingGameId', null)
-    } else {
-      const finalSlots = slots || getEmptySlots()
-
-      dispatch('networking/startServer', {
-        setup,
-        slots: finalSlots,
-        gameAnnotations: state.gameAnnotations
-      }, { root: true })
-    }
+    const finalSlots = slots || getEmptySlots()
+    dispatch('networking/startServer', { setup, slots: finalSlots, gameAnnotations: state.gameAnnotations }, { root: true })
   }
 }
 

@@ -1,0 +1,1 @@
+export const DISCORD_CLIENT_ID = 'FanCloisterZoneClientId' // Replace with your actual Discord Application Client ID;

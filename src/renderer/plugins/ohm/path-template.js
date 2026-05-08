@@ -3,7 +3,7 @@ import zip from 'lodash/zip'
 import * as ohm from 'ohm-js'
 import { Path, Point } from 'paper/dist/paper-core'
 
-import PathTemplateGrammar from './path-template.ohm'
+import PathTemplateGrammar from './path-template.ohm?raw'
 
 export const grammar = ohm.grammar(PathTemplateGrammar)
 

@@ -3,7 +3,7 @@ import { spawn } from 'child_process'
 import { createConnection } from 'net'
 
 const DEV_URL = 'http://localhost:3000'
-const DIST = 'dist/main/main.js'
+const DIST = 'dist/main/index.js'
 const ELECTRON = './node_modules/.bin/electron'
 const HOST = 'localhost'
 const PORT = 3000

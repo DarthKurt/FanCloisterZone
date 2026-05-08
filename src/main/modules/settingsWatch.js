@@ -1,7 +1,6 @@
 import fs from 'fs'
 import { app } from 'electron'
-
-import { loadSettings, isSaveInProgress, SETTINGS_FILE } from '../settings'
+import { loadSettings, isSaveInProgress, SETTINGS_FILE } from '../settings.js'
 
 let timeout = null
 let watcher = null
@@ -14,7 +13,11 @@ export default function () {
           watcher = fs.watch(SETTINGS_FILE, eventType => {
             if (eventType === 'change' && !isSaveInProgress()) {
               loadSettings().then(settings => {
-                win.webContents.send('settings.changed', { settings, file: SETTINGS_FILE, systemLocale: app.getSystemLocale() || 'en-US' })
+                win.webContents.send('settings.changed', {
+                  settings,
+                  file: SETTINGS_FILE,
+                  systemLocale: app.getSystemLocale() || 'en-US'
+                })
               })
             }
           })
@@ -27,11 +30,7 @@ export default function () {
 
     winClosed () {
       clearTimeout(timeout)
-
-      if (watcher) {
-        watcher.close()
-        watcher = null
-      }
+      if (watcher) { watcher.close(); watcher = null }
     }
   }
 }

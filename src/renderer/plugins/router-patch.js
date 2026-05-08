@@ -1,6 +1,5 @@
-
-export default ({ app }, inject) => {
-  const { router } = app
+export default defineNuxtPlugin((nuxtApp) => {
+  const router = nuxtApp.$router
   let programmatic = false
 
   ;(['push', 'replace', 'go', 'back', 'forward']).forEach(methodName => {
@@ -12,7 +11,7 @@ export default ({ app }, inject) => {
   })
 
   router.beforeEach((to, from, next) => {
-    // name is null for relaod or initial load
+    // name is null for reload or initial load
     if (from.name === null || programmatic) {
       next()
     } else {
@@ -20,4 +19,4 @@ export default ({ app }, inject) => {
     }
     programmatic = false // clear flag
   })
-}
+})

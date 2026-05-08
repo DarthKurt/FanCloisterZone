@@ -4,7 +4,6 @@ const findPlayerIndex = (state, name) => {
   return state.players.findIndex(p => p.name === name)
 }
 
-// -------------------- Points Assert --------------------
 class PointsAssert {
   constructor(state) {
     this.REGEXP = /(\w+) has (-?\d+) points?/
@@ -21,7 +20,6 @@ class PointsAssert {
   }
 }
 
-// -------------------- Feature Scored Assert --------------------
 class FeatureScoredAssert {
   constructor(state) {
     this.REGEXP = /(\w+) scored ([\w-]+) for (-?\d+) points?/
@@ -53,7 +51,6 @@ class FeatureScoredAssert {
   }
 }
 
-// -------------------- Pass Assert --------------------
 class PassAssert {
   constructor(state) {
     this.state = state
@@ -65,7 +62,6 @@ class PassAssert {
   }
 }
 
-// -------------------- Phase Assert --------------------
 class PhaseAssert {
   constructor(state) {
     this.REGEXP = /phase is (\w+)/i
@@ -78,7 +74,6 @@ class PhaseAssert {
   }
 }
 
-// -------------------- Available Action Assert --------------------
 class AvailableActionAssert {
   constructor(state) {
     this.state = state
@@ -92,28 +87,22 @@ class AvailableActionAssert {
     const actionType = m[1]
     const forId = m[2]
 
-    // Find items of this action type
     const items = this.state.action.items.filter(a => a.type === actionType)
     if (!items.length) return { result: false }
-    
+
     if (forId) {
-      // Try to match 'tileId', 'token', or 'meeple' properties
       const match = items.find(
         a => a.tileId === forId || a.token === forId || a.meeple === forId
       )
       return { result: !!match }
     }
 
-    // No 'forId' needed, just check if action exists
     return { result: true }
-    
   }
 }
 
-// -------------------- Tile Placement Options Assert --------------------
 class TilePlacementOptionsAssert {
   constructor(state) {
-    // Capture tileId (\S+ = any non-space) and everything after "options:"
     this.REGEXP = /^TilePlacement (\S+) options: (.*)$/
     this.state = state
   }
@@ -181,7 +170,6 @@ class TilePlacementOptionsAssert {
     const tileId = m[1]
     const positionsStr = m[2]
 
-    // Parse expected positions and rotations
     const ENTRY = /\[\s*(-?\d+)\s*,\s*(-?\d+)\s*\]\s*-\s*\[\s*([-\d,\s]+?)\s*\]/g
     const expected = []
 
@@ -192,7 +180,6 @@ class TilePlacementOptionsAssert {
       })
     }
 
-    // Find the TilePlacement item for this tileId
     const tilePlacement = this.state.action.items.find(
       a => a.type === 'TilePlacement' && a.tileId === tileId
     )
@@ -210,7 +197,6 @@ class TilePlacementOptionsAssert {
   }
 }
 
-// -------------------- Undo Assert --------------------
 class UndoAssert {
   constructor(state) {
     this.state = state
@@ -222,7 +208,6 @@ class UndoAssert {
   }
 }
 
-// -------------------- Tunnel Token Placement Options --------------------
 class TunnelTokenPlacementOptionsAssert {
   constructor(state) {
     this.state = state
@@ -280,7 +265,6 @@ class TunnelTokenPlacementOptionsAssert {
   }
 }
 
-// -------------------- Ferries Placement Options --------------------
 class FerriesPlacementOptionsAssert {
   constructor(state) {
     this.state = state
@@ -335,7 +319,6 @@ class FerriesPlacementOptionsAssert {
   }
 }
 
-// -------------------- Meeple Placement Options --------------------
 class MeeplePlacementOptionsAssert {
   constructor(state) {
     this.state = state
@@ -393,7 +376,6 @@ class MeeplePlacementOptionsAssert {
   }
 }
 
-// -------------------- Token Size Assert --------------------
 class TokenSizeAssert {
   constructor(state) {
     this.REGEXP = /(\w+) has (\w+) token with size (\d+)/
@@ -410,10 +392,8 @@ class TokenSizeAssert {
   }
 }
 
-// -------------------- Tower Piece Placement Options Assert -------------------- 
 class TowerPiecePlacementOptionsAssert {
   constructor(state) {
-    // Capture piece type (\S+ = any non-space) and everything after "options:"
     this.REGEXP = /^Tower piece (\S+) options: (.*)$/
     this.state = state
   }
@@ -425,7 +405,6 @@ class TowerPiecePlacementOptionsAssert {
   indexByPosition(arr) {
     const map = new Map()
     for (const item of arr) {
-      // item is the position itself: [x, y]
       const key = this.posKey(item)
       map.set(key, item)
     }
@@ -461,7 +440,6 @@ class TowerPiecePlacementOptionsAssert {
     const token = m[1]
     const positionsStr = m[2]
 
-    // Parse expected positions
     const ENTRY = /\[\s*(-?\d+)\s*,\s*(-?\d+)\s*\]/g
     const expected = []
 
@@ -469,13 +447,12 @@ class TowerPiecePlacementOptionsAssert {
       expected.push([Number(match[1]), Number(match[2])])
     }
 
-    // Find the Tower piece item for this token
     const towerPiece = this.state.action.items.find(
       a => a.type === 'TowerPiece' && a.token === token
     )
 
     if (!towerPiece || !Array.isArray(towerPiece.options)) {
-      console.error(`Tower piece not found or options not an array:`, towerPiece)
+      console.error('Tower piece not found or options not an array:', towerPiece)
       return { result: false }
     }
 
@@ -488,7 +465,6 @@ class TowerPiecePlacementOptionsAssert {
   }
 }
 
-// -------------------- Capture Follower Options --------------------
 class CaptureFollowerOptionsAssert {
   constructor(state) {
     this.state = state
@@ -548,7 +524,6 @@ class CaptureFollowerOptionsAssert {
   }
 }
 
-// -------------------- Main verification function --------------------
 export function verifyScenario(state, { description, assertions }) {
   const result = { description, assertions: [] }
 

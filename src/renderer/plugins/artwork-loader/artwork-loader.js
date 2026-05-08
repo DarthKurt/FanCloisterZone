@@ -1,5 +1,5 @@
-import fs from 'fs'
-import path from 'path'
+import fs from '@/utils/fs-shim'
+import path from '@/utils/path-shim'
 
 import isString from 'lodash/isString'
 import isObject from 'lodash/isObject'

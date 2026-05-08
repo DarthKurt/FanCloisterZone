@@ -1,11 +1,9 @@
-import fs from 'fs'
-import path from 'path'
+import fs from '@/utils/fs-shim'
+import path from '@/utils/path-shim'
 
-import Vue from 'vue'
 import sortBy from 'lodash/sortBy'
 import isNil from 'lodash/isNil'
 import semver from 'semver'
-import { ipcRenderer } from 'electron'
 
 import { Expansion, Release } from '@/models/expansions'
 import { GameElement } from '@/models/elements'
@@ -294,7 +292,7 @@ class Tiles extends EventsBase {
         sets[id] = set
       })
       
-      const appVersion = await ipcRenderer.invoke('get-app-version')
+      const appVersion = await window.electronAPI.invoke('get-app-version')
       const appVer = semver.coerce(appVersion)
 
       doc.querySelectorAll('expansion').forEach(el => {
@@ -347,7 +345,7 @@ class Tiles extends EventsBase {
     })
 
     // load built-in expansions
-    const lookupFolder = process.resourcesPath + '/expansions/'
+    const lookupFolder = window.electronAPI.resourcesPath + '/expansions/'
     const listing = await fs.promises.readdir(lookupFolder)
 
     for (const f of listing) {
@@ -418,23 +416,12 @@ class Tiles extends EventsBase {
       symbolsContainer.innerHTML = this.symbols.join('\n')
     }
 
-    this.ctx.app.store.commit('tilesLoaded')
+    this.ctx.$store.commit('tilesLoaded')
     this.emit('load')
   }
 }
 
-export default (ctx, inject) => {
-  let instance = null
-
-  const prop = {
-    get () {
-      if (instance === null) {
-        instance = new Tiles(ctx)
-      }
-      return instance
-    }
-  }
-  
-  Object.defineProperty(Vue.prototype, '$tiles', prop)
-  Object.defineProperty(ctx, '$tiles', prop)
-}
+export default defineNuxtPlugin((nuxtApp) => {
+  const tiles = new Tiles(nuxtApp)
+  return { provide: { tiles } }
+})

@@ -1,4 +1,3 @@
-
 import Emitter from 'tiny-emitter'
 
 export class EventsBase {
