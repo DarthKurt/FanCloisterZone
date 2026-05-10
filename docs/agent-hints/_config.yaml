@@ -1,0 +1,16 @@
+hints:
+  - file: foundation.md
+    title: "Monorepo Foundation"
+    copilot:
+      applyTo: "**"
+      global: true
+    kiro:
+      inclusion: always
+
+  - file: shell.md
+    title: "Shell Scripts"
+    copilot:
+      applyTo: "**/*.sh"
+    kiro:
+      inclusion: fileMatch
+      fileMatchPattern: "**/*.sh"
