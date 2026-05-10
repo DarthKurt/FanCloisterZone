@@ -37,7 +37,7 @@ jobs:
         run: bash scripts/gen-agent-hints.sh
 
       - name: Commit & push
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "chore: sync agent hints [skip ci]"
           file_pattern: ".kiro/steering/ .github/instructions/ .github/copilot-instructions.md .agent-hints-hash"
