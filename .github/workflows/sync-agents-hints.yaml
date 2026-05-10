@@ -1,0 +1,55 @@
+name: Sync Agent Hints
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/agent-hints/**"
+      - "scripts/gen-agent-hints.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/darthkurt/ci-alpine:0.1.0
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute source hash
+        id: hash
+        run: |
+          h=$(find docs/agent-hints scripts/gen-agent-hints.sh \
+            -type f | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)
+          echo "value=$h" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: .agent-hints-hash
+          key: agent-hints-${{ steps.hash.outputs.value }}
+
+      - name: Generate
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: bash scripts/gen-agent-hints.sh
+
+      - name: Commit & push
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git diff --quiet && echo "Already in sync." && exit 0
+          git add .kiro/steering/ .github/instructions/ .github/copilot-instructions.md
+          git commit -m "chore: sync agent hints [skip ci]"
+          git push
+
+      - name: Save hash
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: echo "${{ steps.hash.outputs.value }}" > .agent-hints-hash
