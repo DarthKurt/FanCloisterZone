@@ -2,10 +2,11 @@ name: Sync Agent Hints
 
 on:
   push:
-    branches: [main]
+    branches: [main, topic/agentic-flows]
     paths:
       - "docs/agent-hints/**"
       - "scripts/gen-agent-hints.sh"
+      - ".github/workflows/sync-agents-hints.yaml"
   workflow_dispatch:
 
 permissions:
