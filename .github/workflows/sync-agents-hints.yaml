@@ -19,7 +19,7 @@ jobs:
       image: ghcr.io/darthkurt/ci-alpine:0.1.0
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -31,7 +31,7 @@ jobs:
             -type f | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)
           echo "value=$h" >> $GITHUB_OUTPUT
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         id: cache
         with:
           path: .agent-hints-hash
@@ -43,13 +43,10 @@ jobs:
 
       - name: Commit & push
         if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git diff --quiet && echo "Already in sync." && exit 0
-          git add .kiro/steering/ .github/instructions/ .github/copilot-instructions.md
-          git commit -m "chore: sync agent hints [skip ci]"
-          git push
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: "chore: sync agent hints [skip ci]"
+          file_pattern: ".kiro/steering/ .github/instructions/ .github/copilot-instructions.md"
 
       - name: Save hash
         if: steps.cache.outputs.cache-hit != 'true'
